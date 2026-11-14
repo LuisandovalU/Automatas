@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { DFA_ORDER, DFA_STATIONS, DfaStateId, NFA_STATIONS, NfaState } from '../data/automataData';
 import { REGEX_LIBRARY, RegexPatternId } from '../data/regexLibraryData';
+import { DEFAULT_EXERCISE_BUNDLE, SolvedMethodBundle } from '../engine/automataMethodEngine';
 import {
   buildCdmxLandmarks,
   buildGhostCloneToken,
@@ -17,9 +18,10 @@ export type SceneNetworkMode = 'nfa' | 'dfa' | 'library';
 
 export interface Metro3DCanvasProps {
   networkMode: SceneNetworkMode;
-  activeNfaStates: NfaState[];
-  activeDfaState: DfaStateId | null;
+  activeNfaStates: string[];
+  activeDfaState: string | null;
   libraryPatternId: RegexPatternId;
+  bundle?: SolvedMethodBundle;
   focusStationId?: string | null;
   isTitleScreen: boolean;
   onStationClick?: (stationId: string) => void;
@@ -53,7 +55,7 @@ interface EdgeSpec {
   from: string;
   to: string;
   kind: 'train' | 'walk' | 'dead';
-  curve?: 'top' | 'bottom' | 'straight';
+  curve?: 'top' | 'bottom' | 'straight' | 'self';
   symbol: string;
   caption: string;
 }
@@ -65,60 +67,104 @@ interface AnimatedWalkBridge {
 
 function getLayoutForMode(
   mode: SceneNetworkMode,
-  libraryPatternId: RegexPatternId
+  libraryPatternId: RegexPatternId,
+  bundle: SolvedMethodBundle = DEFAULT_EXERCISE_BUNDLE
 ): { nodes: NodeCoords[]; edges: EdgeSpec[] } {
   if (mode === 'nfa') {
-    const order: NfaState[] = ['A', 'B', 'C', 'D', 'E', 'F'];
-    const nodes: NodeCoords[] = order.map((id, idx) => {
-      const meta = NFA_STATIONS[id];
-      return {
-        id,
-        label: meta.metroName,
-        x: (idx - 2.5) * 6.4,
-        z: 0,
-        variant: id === 'A' ? 'start' : id === 'F' ? 'accept' : 'normal',
-      };
-    });
-    const edges: EdgeSpec[] = [
-      { from: 'A', to: 'B', kind: 'train', curve: 'straight', symbol: 'a', caption: 'Tren boleto "a"' },
-      { from: 'B', to: 'C', kind: 'train', curve: 'straight', symbol: 'b', caption: 'Tren boleto "b"' },
-      { from: 'C', to: 'D', kind: 'walk', curve: 'straight', symbol: 'ε', caption: 'Pasillo gratis' },
-      { from: 'D', to: 'E', kind: 'train', curve: 'straight', symbol: 'a', caption: 'Tren bucle a*' },
-      { from: 'E', to: 'F', kind: 'walk', curve: 'straight', symbol: 'ε', caption: 'Salida gratis' },
-      { from: 'E', to: 'D', kind: 'walk', curve: 'top', symbol: 'ε', caption: 'Retorno bucle' },
-      { from: 'C', to: 'F', kind: 'walk', curve: 'bottom', symbol: 'ε', caption: 'Atajo directo' },
-    ];
+    if (bundle.spec.id === 'a2-ab-astar') {
+      const order: NfaState[] = ['A', 'B', 'C', 'D', 'E', 'F'];
+      const nodes: NodeCoords[] = order.map((id, idx) => {
+        const meta = NFA_STATIONS[id];
+        return {
+          id,
+          label: meta.metroName,
+          x: (idx - 2.5) * 6.4,
+          z: 0,
+          variant: id === 'A' ? 'start' : id === 'F' ? 'accept' : 'normal',
+        };
+      });
+      const edges: EdgeSpec[] = [
+        { from: 'A', to: 'B', kind: 'train', curve: 'straight', symbol: 'a', caption: 'Tren boleto "a"' },
+        { from: 'B', to: 'C', kind: 'train', curve: 'straight', symbol: 'b', caption: 'Tren boleto "b"' },
+        { from: 'C', to: 'D', kind: 'walk', curve: 'straight', symbol: 'ε', caption: 'Pasillo gratis' },
+        { from: 'D', to: 'E', kind: 'train', curve: 'straight', symbol: 'a', caption: 'Tren bucle a*' },
+        { from: 'E', to: 'F', kind: 'walk', curve: 'straight', symbol: 'ε', caption: 'Salida gratis' },
+        { from: 'E', to: 'D', kind: 'walk', curve: 'top', symbol: 'ε', caption: 'Retorno bucle' },
+        { from: 'C', to: 'F', kind: 'walk', curve: 'bottom', symbol: 'ε', caption: 'Atajo directo' },
+      ];
+      return { nodes, edges };
+    }
+
+    const { nfaLayout, stations } = bundle;
+    const nodes: NodeCoords[] = nfaLayout.nodes.map((n) => ({
+      id: n.id,
+      label: stations[n.id]?.metroName ?? n.id,
+      x: (n.x - nfaLayout.width / 2) * 0.048,
+      z: (n.y - nfaLayout.height / 2) * 0.055,
+      variant: n.isStart ? 'start' : n.isAccept ? 'accept' : 'normal',
+    }));
+    const edges: EdgeSpec[] = nfaLayout.edges.map((e) => ({
+      from: e.from,
+      to: e.to,
+      kind: e.kind,
+      curve: e.curve,
+      symbol: e.label,
+      caption: e.kind === 'walk' ? 'Pasillo gratis' : `Tren "${e.label}"`,
+    }));
     return { nodes, edges };
   }
 
   if (mode === 'dfa') {
-    const coords: Record<DfaStateId, { x: number; z: number }> = {
-      '[A]': { x: -8.0, z: -6.2 },
-      '[B]': { x: 4.8, z: -6.2 },
-      '[∅]': { x: 0, z: 0.4 },
-      '[C,D,F]': { x: 8.2, z: 7.2 },
-      '[E,D,F]': { x: -7.2, z: 7.2 },
-    };
-    const nodes: NodeCoords[] = DFA_ORDER.map((id) => {
-      const st = DFA_STATIONS[id];
+    if (bundle.spec.id === 'a2-ab-astar') {
+      const coords: Record<DfaStateId, { x: number; z: number }> = {
+        '[A]': { x: -8.0, z: -6.2 },
+        '[B]': { x: 4.8, z: -6.2 },
+        '[∅]': { x: 0, z: 0.4 },
+        '[C,D,F]': { x: 8.2, z: 7.2 },
+        '[E,D,F]': { x: -7.2, z: 7.2 },
+      };
+      const nodes: NodeCoords[] = DFA_ORDER.map((id) => {
+        const st = DFA_STATIONS[id];
+        return {
+          id,
+          label: st.subtitle.split('·')[0].trim(),
+          x: coords[id].x,
+          z: coords[id].z,
+          variant: st.isStart ? 'start' : st.ef === '1' ? 'accept' : st.isDeadEnd ? 'deadend' : 'normal',
+        };
+      });
+      const edges: EdgeSpec[] = [
+        { from: '[A]', to: '[B]', kind: 'train', curve: 'straight', symbol: 'a', caption: 'Vía boleto "a"' },
+        { from: '[A]', to: '[∅]', kind: 'dead', curve: 'straight', symbol: 'b', caption: 'Error → Pozo' },
+        { from: '[B]', to: '[∅]', kind: 'dead', curve: 'straight', symbol: 'a', caption: 'Error → Pozo' },
+        { from: '[B]', to: '[C,D,F]', kind: 'train', curve: 'straight', symbol: 'b', caption: 'Vía boleto "b"' },
+        { from: '[C,D,F]', to: '[E,D,F]', kind: 'train', curve: 'straight', symbol: 'a', caption: 'Entra bucle' },
+        { from: '[C,D,F]', to: '[∅]', kind: 'dead', curve: 'straight', symbol: 'b', caption: 'Error → Pozo' },
+        { from: '[E,D,F]', to: '[∅]', kind: 'dead', curve: 'straight', symbol: 'b', caption: 'Error → Pozo' },
+        { from: '[E,D,F]', to: '[E,D,F]', kind: 'train', curve: 'bottom', symbol: 'a', caption: 'Bucle a*' },
+      ];
+      return { nodes, edges };
+    }
+
+    const { dfaLayout, dfaRows } = bundle;
+    const nodes: NodeCoords[] = dfaLayout.nodes.map((n) => {
+      const row = dfaRows[n.id];
       return {
-        id,
-        label: st.subtitle.split('·')[0].trim(),
-        x: coords[id].x,
-        z: coords[id].z,
-        variant: st.isStart ? 'start' : st.ef === '1' ? 'accept' : st.isDeadEnd ? 'deadend' : 'normal',
+        id: n.id,
+        label: row?.subtitle?.split('·')[0].trim() ?? n.id,
+        x: (n.x - dfaLayout.width / 2) * 0.044,
+        z: (n.y - dfaLayout.height / 2) * 0.046,
+        variant: n.isStart ? 'start' : n.isAccept ? 'accept' : n.isDeadEnd ? 'deadend' : 'normal',
       };
     });
-    const edges: EdgeSpec[] = [
-      { from: '[A]', to: '[B]', kind: 'train', curve: 'straight', symbol: 'a', caption: 'Vía boleto "a"' },
-      { from: '[A]', to: '[∅]', kind: 'dead', curve: 'straight', symbol: 'b', caption: 'Error → Pozo' },
-      { from: '[B]', to: '[∅]', kind: 'dead', curve: 'straight', symbol: 'a', caption: 'Error → Pozo' },
-      { from: '[B]', to: '[C,D,F]', kind: 'train', curve: 'straight', symbol: 'b', caption: 'Vía boleto "b"' },
-      { from: '[C,D,F]', to: '[E,D,F]', kind: 'train', curve: 'straight', symbol: 'a', caption: 'Entra bucle' },
-      { from: '[C,D,F]', to: '[∅]', kind: 'dead', curve: 'straight', symbol: 'b', caption: 'Error → Pozo' },
-      { from: '[E,D,F]', to: '[∅]', kind: 'dead', curve: 'straight', symbol: 'b', caption: 'Error → Pozo' },
-      { from: '[E,D,F]', to: '[E,D,F]', kind: 'train', curve: 'bottom', symbol: 'a', caption: 'Bucle a*' },
-    ];
+    const edges: EdgeSpec[] = dfaLayout.edges.map((e) => ({
+      from: e.from,
+      to: e.to,
+      kind: e.kind,
+      curve: e.curve,
+      symbol: e.label,
+      caption: e.kind === 'dead' ? 'Error → Pozo' : `Vía "${e.label}"`,
+    }));
     return { nodes, edges };
   }
 
@@ -147,6 +193,7 @@ export const Metro3DCanvas: React.FC<Metro3DCanvasProps> = ({
   activeNfaStates,
   activeDfaState,
   libraryPatternId,
+  bundle = DEFAULT_EXERCISE_BUNDLE,
   focusStationId,
   isTitleScreen,
   onStationClick,
@@ -159,6 +206,7 @@ export const Metro3DCanvas: React.FC<Metro3DCanvasProps> = ({
     activeNfaStates,
     activeDfaState,
     libraryPatternId,
+    bundle,
     focusStationId,
     isTitleScreen,
     onStationClick,
@@ -168,6 +216,7 @@ export const Metro3DCanvas: React.FC<Metro3DCanvasProps> = ({
     activeNfaStates,
     activeDfaState,
     libraryPatternId,
+    bundle,
     focusStationId,
     isTitleScreen,
     onStationClick,
@@ -178,7 +227,7 @@ export const Metro3DCanvas: React.FC<Metro3DCanvasProps> = ({
 
   useEffect(() => {
     rebuildNetworkRef.current?.();
-  }, [networkMode, libraryPatternId]);
+  }, [networkMode, libraryPatternId, bundle]);
 
   useEffect(() => {
     triggerCameraFocusRef.current?.();
@@ -373,8 +422,8 @@ export const Metro3DCanvas: React.FC<Metro3DCanvasProps> = ({
     const trainAsset = buildMetroTrain(shadowTex, maxAniso);
     scene.add(trainAsset.leadGroup, trainAsset.trailerGroup, trainAsset.bellowsMesh);
 
-    // 4 Reusable Ghost Clone Tokens (for ε cloning visualization)
-    const ghostTokens = Array.from({ length: 4 }, () => {
+    // 8 Reusable Ghost Clone Tokens (for ε cloning visualization)
+    const ghostTokens = Array.from({ length: 8 }, () => {
       const tok = buildGhostCloneToken();
       tok.group.visible = false;
       scene.add(tok.group);
@@ -441,10 +490,11 @@ export const Metro3DCanvas: React.FC<Metro3DCanvasProps> = ({
       const {
         networkMode: mode,
         libraryPatternId: patId,
+        bundle: activeBundle,
         activeNfaStates: nfaStates,
         activeDfaState: dfaState,
       } = propsRef.current;
-      const layout = getLayoutForMode(mode, patId);
+      const layout = getLayoutForMode(mode, patId, activeBundle);
 
       // 1. Build Metro CDMX Stations
       layout.nodes.forEach((n) => {
@@ -608,7 +658,14 @@ export const Metro3DCanvas: React.FC<Metro3DCanvasProps> = ({
           } else {
             const mx = (pFrom.x + pTo.x) / 2;
             const mz = (az + bz) / 2;
-            const arcDip = edge.kind === 'dead' ? 1.2 : 0;
+            const arcDip =
+              edge.curve === 'top'
+                ? -2.5
+                : edge.curve === 'bottom'
+                ? 2.5
+                : edge.kind === 'dead'
+                ? 1.2
+                : 0;
             railCurve = new THREE.CatmullRomCurve3([
               new THREE.Vector3(pFrom.x, TRAIN_RAIL_Y, az),
               new THREE.Vector3(mx, TRAIN_RAIL_Y, mz + arcDip),
@@ -679,9 +736,9 @@ export const Metro3DCanvas: React.FC<Metro3DCanvasProps> = ({
       // Snap train immediately to initial station of the newly built network
       const initialId =
         mode === 'nfa'
-          ? nfaStates[0] ?? 'A'
+          ? nfaStates[0] ?? activeBundle.spec.startState
           : mode === 'dfa'
-          ? dfaState ?? '[A]'
+          ? dfaState ?? activeBundle.dfaStartId
           : layout.nodes[0]?.id ?? null;
       snapTrainToStation(initialId);
     };
@@ -777,6 +834,7 @@ export const Metro3DCanvas: React.FC<Metro3DCanvasProps> = ({
 
       const {
         networkMode: mode,
+        bundle: activeBundle,
         activeNfaStates: nfaStates,
         activeDfaState: dfaState,
         focusStationId: focusId,
@@ -786,9 +844,9 @@ export const Metro3DCanvas: React.FC<Metro3DCanvasProps> = ({
       // 1. Resolve Primary Station Target & Initiate Curve-Following Motion
       let primaryId: string | null = null;
       if (mode === 'nfa') {
-        primaryId = nfaStates[0] ?? 'A';
+        primaryId = nfaStates[0] ?? activeBundle.spec.startState;
       } else if (mode === 'dfa') {
-        primaryId = dfaState ?? '[A]';
+        primaryId = dfaState ?? activeBundle.dfaStartId;
       } else {
         const firstKey = stationCoordsMap.keys().next().value as string | undefined;
         primaryId = firstKey ?? null;
@@ -945,7 +1003,7 @@ export const Metro3DCanvas: React.FC<Metro3DCanvasProps> = ({
       // 5. Highlight active station beacon rings
       activeBeaconMeshes.forEach((ring, id) => {
         const isHot =
-          (mode === 'nfa' && nfaStates.includes(id as NfaState)) ||
+          (mode === 'nfa' && nfaStates.includes(id)) ||
           (mode === 'dfa' && dfaState === id) ||
           focusId === id;
         const mat = ring.material as THREE.MeshBasicMaterial;

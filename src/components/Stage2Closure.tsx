@@ -1,681 +1,649 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
+  Eye,
+  GraduationCap,
   HelpCircle,
   RotateCcw,
   Sparkles,
+  Table2,
+  XCircle,
 } from 'lucide-react';
-import { MetroMapNFA } from './MetroMapNFA';
-import { IMAGE2_TABLE, Image2Row, NFA_STATIONS, NfaState } from '../data/automataData';
+import {
+  DEFAULT_EXERCISE_BUNDLE,
+  SolvedMethodBundle,
+  Stage2RowDynamic,
+} from '../engine/automataMethodEngine';
 import { metroAudio } from '../utils/metroAudio';
+import { MetroMapNFA } from './MetroMapNFA';
 
-const ALL_STATES: NfaState[] = ['A', 'B', 'C', 'D', 'E', 'F'];
-
-type StepField = 'epsilonC' | 'deltaA' | 'epsilonCA' | 'deltaB' | 'epsilonCB' | 'efNew';
-
-interface TableStepDef {
-  index: number;
-  state: NfaState;
-  field: StepField;
-  label: string;
+interface Stage2ClosureProps {
+  bundle?: SolvedMethodBundle;
+  onNextStage: () => void;
 }
 
-const STEP_FIELDS: { field: StepField; label: string }[] = [
-  { field: 'epsilonC', label: '1. ε-C' },
-  { field: 'deltaA', label: '2. δ(x, a)' },
-  { field: 'epsilonCA', label: '3. ε-C → AFN(a)' },
-  { field: 'deltaB', label: '2. δ(x, b)' },
-  { field: 'epsilonCB', label: '3. ε-C → AFN(b)' },
-  { field: 'efNew', label: 'EF nuevo' },
-];
+type CellFocus = {
+  state: string;
+  symbol: string;
+};
 
-const ALL_STEPS: TableStepDef[] = IMAGE2_TABLE.flatMap((row, rIdx) =>
-  STEP_FIELDS.map((sf, cIdx) => ({
-    index: rIdx * STEP_FIELDS.length + cIdx,
-    state: row.state,
-    field: sf.field,
-    label: sf.label,
-  }))
-);
+export const Stage2Closure: React.FC<Stage2ClosureProps> = ({
+  bundle = DEFAULT_EXERCISE_BUNDLE,
+  onNextStage,
+}) => {
+  const { spec, stations, stage2Rows, candidateSets } = bundle;
+  const alphabet = spec.alphabet;
+  const firstSym = alphabet[0] ?? 'a';
 
-const SET_OPTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'C,D,F', 'E,D,F', '∅'];
-const EF_OPTIONS = ['∅', '1'];
+  const [mode, setMode] = useState<'guided' | 'practice'>('guided');
+  const [showNewAcceptsOnMap, setShowNewAcceptsOnMap] = useState(true);
+  const [focus, setFocus] = useState<CellFocus>({
+    state: spec.startState,
+    symbol: firstSym,
+  });
 
-function cellKey(state: NfaState, field: StepField): string {
-  return `${state}:${field}`;
-}
+  // Mini-game: ε-C(x) builder
+  const [miniState, setMiniState] = useState<string>(spec.startState);
+  const [miniPicked, setMiniPicked] = useState<string[]>([spec.startState]);
+  const [miniChecked, setMiniChecked] = useState<boolean>(false);
 
-export const Stage2Closure: React.FC<{ onNextStage: () => void }> = ({ onNextStage }) => {
-  const [targetStation, setTargetStation] = useState<NfaState>('C');
-  const [userPick, setUserPick] = useState<NfaState[]>(['C']);
-  const [checkedClosure, setCheckedClosure] = useState<boolean | null>(null);
+  // Practice mode answers: key = `${state}|${sym}|delta` or `closure` or `efNew`
+  const [practiceAnswers, setPracticeAnswers] = useState<Record<string, string>>({});
+  const [practiceVerified, setPracticeVerified] = useState(false);
 
-  // Interactive table filling state
-  const [tableMode, setTableMode] = useState<'guided' | 'practice'>('guided');
-  // Start with Row A & B pre-guided or at step 12 (Row C step 1) — actually starting at step 1 (Row A step 1) or 0 makes the step-by-step discovery super clear! Let's start at step 1 (A: ε-C) so the arrow pipeline is immediately visible and alive.
-  const [guidedStepCount, setGuidedStepCount] = useState<number>(1);
-  const [practiceValues, setPracticeValues] = useState<Record<string, string>>({});
-  const [focusedStepIdx, setFocusedStepIdx] = useState<number>(0);
+  const [showSummaryTable, setShowSummaryTable] = useState(true);
 
-  const targetMeta = NFA_STATIONS[targetStation];
+  // Reset state whenever active exercise changes
+  useEffect(() => {
+    setFocus({
+      state: bundle.spec.startState,
+      symbol: bundle.spec.alphabet[0] ?? 'a',
+    });
+    setMiniState(bundle.spec.startState);
+    setMiniPicked([bundle.spec.startState]);
+    setMiniChecked(false);
+    setPracticeAnswers({});
+    setPracticeVerified(false);
+  }, [bundle.spec.id, bundle.spec.startState, bundle.spec.alphabet]);
 
-  const handleSelectStationForGame = (st: NfaState) => {
-    setTargetStation(st);
-    setUserPick([st]);
-    setCheckedClosure(null);
-    metroAudio.playTicketClick();
-  };
+  const rowByState = useMemo(() => {
+    const map: Record<string, Stage2RowDynamic> = {};
+    for (const r of stage2Rows) map[r.state] = r;
+    return map;
+  }, [stage2Rows]);
 
-  const togglePick = (st: NfaState) => {
-    setCheckedClosure(null);
-    metroAudio.playTicketClick();
-    setUserPick((prev) =>
-      prev.includes(st) ? prev.filter((item) => item !== st) : [...prev, st]
+  const activeRow = rowByState[focus.state] ?? stage2Rows[0];
+  const activeSymbol = alphabet.includes(focus.symbol) ? focus.symbol : firstSym;
+  const activeCell = activeRow?.bySymbol[activeSymbol];
+
+  // Highlights on MetroMapNFA matching the currently inspected arrow pipeline
+  const mapHighlights = useMemo(() => {
+    if (!activeRow || !activeCell) {
+      return { activeStates: [] as string[], transitions: [] as string[] };
+    }
+    const activeSet = new Set<string>([
+      activeRow.state,
+      ...activeRow.epsilonCList,
+      ...activeCell.deltaList,
+      ...activeCell.closureList,
+    ]);
+
+    const epsSeeds = new Set<string>([activeRow.state, ...activeCell.deltaList]);
+    const closurePool = new Set<string>([...activeRow.epsilonCList, ...activeCell.closureList]);
+    const deltaSet = new Set<string>(activeCell.deltaList);
+    const epsStartSet = new Set<string>(activeRow.epsilonCList);
+
+    const trIds: string[] = [];
+    for (const tr of spec.transitions) {
+      if (
+        tr.label === activeSymbol &&
+        epsStartSet.has(tr.from) &&
+        deltaSet.has(tr.to)
+      ) {
+        trIds.push(tr.id);
+      } else if (
+        tr.label === 'ε' &&
+        (epsSeeds.has(tr.from) || closurePool.has(tr.from)) &&
+        closurePool.has(tr.to)
+      ) {
+        trIds.push(tr.id);
+      }
+    }
+
+    return {
+      activeStates: Array.from(activeSet),
+      transitions: trIds,
+    };
+  }, [activeRow, activeCell, activeSymbol, spec.transitions]);
+
+  // Mini-game handlers
+  const targetMiniRow = rowByState[miniState] ?? stage2Rows[0];
+  const miniExpected = targetMiniRow ? targetMiniRow.epsilonCList : [];
+  const miniIsCorrect =
+    miniChecked &&
+    miniPicked.length === miniExpected.length &&
+    miniExpected.every((s) => miniPicked.includes(s));
+
+  const toggleMiniPick = (st: string) => {
+    setMiniChecked(false);
+    setMiniPicked((prev) =>
+      prev.includes(st) ? prev.filter((x) => x !== st) : [...prev, st]
     );
   };
 
-  const verifyClosure = () => {
-    const expected = [...targetMeta.epsilonClosure].sort().join(',');
-    const got = [...userPick].sort().join(',');
-    const ok = expected === got;
-    setCheckedClosure(ok);
+  const handleCheckMini = () => {
+    setMiniChecked(true);
+    const ok =
+      miniPicked.length === miniExpected.length &&
+      miniExpected.every((s) => miniPicked.includes(s));
     if (ok) metroAudio.playValidExitChime();
     else metroAudio.playDeadEndBuzz();
   };
 
-  const activeStepDef = ALL_STEPS[Math.min(focusedStepIdx, ALL_STEPS.length - 1)];
-  const activeRowData: Image2Row =
-    IMAGE2_TABLE.find((r) => r.state === activeStepDef.state) ?? IMAGE2_TABLE[0];
-
-  const isCellRevealedInGuided = (state: NfaState, field: StepField): boolean => {
-    const idx = ALL_STEPS.findIndex((s) => s.state === state && s.field === field);
-    return idx < guidedStepCount;
-  };
-
-  const handleNextGuidedStep = () => {
-    const nextCount = Math.min(ALL_STEPS.length, guidedStepCount + 1);
-    setGuidedStepCount(nextCount);
-    setFocusedStepIdx(Math.max(0, nextCount - 1));
-    const justFilled = ALL_STEPS[nextCount - 1];
-    if (justFilled) {
-      const row = IMAGE2_TABLE.find((r) => r.state === justFilled.state)!;
-      if (justFilled.field === 'efNew' && row.efNew === '1') {
-        metroAudio.playValidExitChime();
-      } else if (row[justFilled.field] === '∅') {
-        metroAudio.playTicketClick();
-      } else {
-        metroAudio.playTransferChime();
+  // Practice dropdown options
+  const practiceSetOptions = useMemo(() => {
+    const opts = new Set<string>(['∅']);
+    for (const r of stage2Rows) {
+      opts.add(r.epsilonC);
+      for (const sym of alphabet) {
+        opts.add(r.bySymbol[sym].delta);
+        opts.add(r.bySymbol[sym].closure);
       }
     }
-  };
+    for (const cs of candidateSets) opts.add(cs);
+    return Array.from(opts);
+  }, [stage2Rows, alphabet, candidateSets]);
 
-  const handlePrevGuidedStep = () => {
-    const nextCount = Math.max(1, guidedStepCount - 1);
-    setGuidedStepCount(nextCount);
-    setFocusedStepIdx(Math.max(0, nextCount - 1));
-    metroAudio.playTicketClick();
-  };
-
-  const handleFillRow = (state: NfaState) => {
-    const rowIdx = IMAGE2_TABLE.findIndex((r) => r.state === state);
-    const endOfRowCount = (rowIdx + 1) * STEP_FIELDS.length;
-    setGuidedStepCount((prev) => Math.max(prev, endOfRowCount));
-    setFocusedStepIdx(endOfRowCount - 1);
-    metroAudio.playTransferChime();
-  };
-
-  const handleFillAll = () => {
-    if (tableMode === 'guided') {
-      setGuidedStepCount(ALL_STEPS.length);
-      setFocusedStepIdx(ALL_STEPS.length - 1);
-    } else {
-      const all: Record<string, string> = {};
-      IMAGE2_TABLE.forEach((r) => {
-        STEP_FIELDS.forEach((sf) => {
-          all[cellKey(r.state, sf.field)] = r[sf.field];
-        });
-      });
-      setPracticeValues(all);
+  const practiceStats = useMemo(() => {
+    let total = 0;
+    let correct = 0;
+    for (const r of stage2Rows) {
+      for (const sym of alphabet) {
+        total += 2;
+        if (practiceAnswers[`${r.state}|${sym}|delta`] === r.bySymbol[sym].delta) correct++;
+        if (practiceAnswers[`${r.state}|${sym}|closure`] === r.bySymbol[sym].closure) correct++;
+      }
+      total += 1;
+      if (practiceAnswers[`${r.state}|efNew`] === r.efNew) correct++;
     }
+    return { total, correct };
+  }, [stage2Rows, alphabet, practiceAnswers]);
+
+  const handleAutoFillPractice = () => {
+    const filled: Record<string, string> = {};
+    for (const r of stage2Rows) {
+      for (const sym of alphabet) {
+        filled[`${r.state}|${sym}|delta`] = r.bySymbol[sym].delta;
+        filled[`${r.state}|${sym}|closure`] = r.bySymbol[sym].closure;
+      }
+      filled[`${r.state}|efNew`] = r.efNew;
+    }
+    setPracticeAnswers(filled);
+    setPracticeVerified(true);
     metroAudio.playValidExitChime();
   };
 
-  const handleResetTable = () => {
-    if (tableMode === 'guided') {
-      setGuidedStepCount(1);
-      setFocusedStepIdx(0);
-    } else {
-      setPracticeValues({});
-      setFocusedStepIdx(0);
-    }
-    metroAudio.playTicketClick();
-  };
-
-  const practiceCorrectCount = useMemo(() => {
-    let count = 0;
-    IMAGE2_TABLE.forEach((r) => {
-      STEP_FIELDS.forEach((sf) => {
-        if (practiceValues[cellKey(r.state, sf.field)] === r[sf.field]) count++;
-      });
-    });
-    return count;
-  }, [practiceValues]);
-
-  // Map highlights driven by activeStepDef
-  const mapHighlights = useMemo(() => {
-    const edges: string[] = [];
-    let states: NfaState[] = [activeStepDef.state];
-    const st = activeStepDef.state;
-    const fld = activeStepDef.field;
-
-    if (st === 'C') {
-      edges.push('C-e-D', 'C-e-F');
-      if (fld === 'epsilonC' || fld === 'efNew') {
-        states = ['C', 'D', 'F'];
-      } else if (fld === 'deltaA') {
-        edges.push('D-a-E');
-        states = ['E'];
-      } else if (fld === 'epsilonCA') {
-        edges.push('D-a-E', 'E-e-D', 'E-e-F');
-        states = ['E', 'D', 'F'];
-      } else {
-        states = ['C', 'D', 'F'];
-      }
-    } else if (st === 'E') {
-      edges.push('E-e-D', 'E-e-F');
-      if (fld === 'epsilonC' || fld === 'efNew') {
-        states = ['E', 'D', 'F'];
-      } else if (fld === 'deltaA' || fld === 'epsilonCA') {
-        edges.push('D-a-E');
-        states = ['E', 'D', 'F'];
-      }
-    } else if (st === 'A') {
-      if (fld === 'deltaA' || fld === 'epsilonCA') {
-        edges.push('A-a-B');
-        states = ['B'];
-      }
-    } else if (st === 'B') {
-      if (fld === 'deltaB') {
-        edges.push('B-b-C');
-        states = ['C'];
-      } else if (fld === 'epsilonCB') {
-        edges.push('B-b-C', 'C-e-D', 'C-e-F');
-        states = ['C', 'D', 'F'];
-      }
-    } else if (st === 'D') {
-      if (fld === 'deltaA') {
-        edges.push('D-a-E');
-        states = ['E'];
-      } else if (fld === 'epsilonCA') {
-        edges.push('D-a-E', 'E-e-D', 'E-e-F');
-        states = ['E', 'D', 'F'];
-      }
-    }
-    return { states, edges };
-  }, [activeStepDef]);
-
-  // Arrow pipeline content for the active step
-  const arrowPipeline = useMemo(() => {
-    const row = activeRowData;
-    const f = activeStepDef.field;
-
-    if (f === 'efNew') {
-      return {
-        modeTitle: `¿Por qué EF nuevo = ${row.efNew} en la estación ${row.state}?`,
-        activeBoxIndex: 3,
-        steps: [
-          {
-            boxTitle: 'Estación inicial',
-            value: row.state,
-            arrowLabel: '1. Camina gratis (ε-C)',
-            arrowSub: 'Sin pagar boletos',
-          },
-          {
-            boxTitle: 'Alcance gratis',
-            value: `{${row.epsilonC}}`,
-            arrowLabel: '2. ¿Está la salida F?',
-            arrowSub: row.efNew === '1' ? 'F sí está incluida' : 'F no está aquí',
-          },
-          {
-            boxTitle: 'Regla de salida',
-            value: row.efNew === '1' ? 'Sí llega a F' : 'No llega a F',
-            arrowLabel: '3. Nuevo EF',
-            arrowSub: 'Resultado final',
-          },
-          {
-            boxTitle: 'EF nuevo',
-            value: row.efNew,
-            arrowLabel: '',
-            arrowSub: '',
-          },
-        ],
-        explanation: row.whyEF,
-      };
-    }
-
-    const isBChain = f === 'deltaB' || f === 'epsilonCB';
-    const ticket = isBChain ? 'b' : 'a';
-    const deltaVal = isBChain ? row.deltaB : row.deltaA;
-    const finalVal = isBChain ? row.epsilonCB : row.epsilonCA;
-
-    const activeBoxIndex =
-      f === 'epsilonC' ? 1 : f === 'deltaA' || f === 'deltaB' ? 2 : 3;
-
-    return {
-      modeTitle: `Flujo con flechas · Fila ${row.state} · ${
-        f === 'epsilonC' ? 'Paso 1: Transbordo inicial' : `Boleto "${ticket}"`
-      }`,
-      activeBoxIndex,
-      steps: [
-        {
-          boxTitle: 'Andén actual',
-          value: row.state,
-          arrowLabel: '1. Camina gratis (ε-C)',
-          arrowSub: '¿Dónde apareces sin pagar?',
-        },
-        {
-          boxTitle: '1. ε-C(x)',
-          value: `{${row.epsilonC}}`,
-          arrowLabel: `2. Paga boleto "${ticket}"`,
-          arrowSub: `¿Quién tiene tren "${ticket}"?`,
-        },
-        {
-          boxTitle: `2. δ(x, ${ticket})`,
-          value: deltaVal === '∅' ? '∅ (ninguno)' : `{${deltaVal}}`,
-          arrowLabel: '3. Camina gratis al bajar',
-          arrowSub: 'ε-C del destino',
-        },
-        {
-          boxTitle: `3. AFN(${ticket})`,
-          value: finalVal === '∅' ? '∅' : `{${finalVal}}`,
-          arrowLabel: '',
-          arrowSub: '',
-        },
-      ],
-      explanation: isBChain ? row.whyB : row.whyA,
-    };
-  }, [activeRowData, activeStepDef.field]);
-
-  const progressCurrent = tableMode === 'guided' ? guidedStepCount : practiceCorrectCount;
-
   return (
-    <div className="space-y-8">
-      {/* Header card */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5">
-        <div className="text-xs font-medium text-slate-500">
-          Capítulo 2 · El alcance del transbordo gratis (ε-Cerradura) · Imagen 2
-        </div>
-        <h2 className="text-2xl font-bold text-slate-900 mt-1 text-balance">
-          Llena la tabla paso a paso siguiendo las flechas
-        </h2>
-        <p className="text-sm text-slate-600 mt-2 leading-relaxed max-w-4xl">
-          Para eliminar los pasillos invisibles <span className="font-mono font-semibold text-sky-700">ε</span>, cada
-          fila se llena siempre en cadena de 3 pasos:{' '}
-          <strong className="text-slate-900">1. Camina gratis (ε-C)</strong> →{' '}
-          <strong className="text-slate-900">2. Toma el tren (a o b)</strong> →{' '}
-          <strong className="text-slate-900">3. Vuelve a caminar gratis al bajar (ε-C)</strong>.
-        </p>
-      </div>
-
-      {/* Top Two-Zone: Map + Closure Mini-Game */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <div className="lg:col-span-8">
-          <MetroMapNFA
-            activeStates={mapHighlights.states}
-            highlightedTransitions={mapHighlights.edges}
-            selectedStation={targetStation}
-            onSelectStation={handleSelectStationForGame}
-            showNewAccepts={true}
-            caption="Al avanzar en la tabla inferior, el mapa resalta el recorrido exacto de las flechas."
-          />
-        </div>
-
-        <div className="lg:col-span-4 bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+    <div className="space-y-6">
+      {/* Header banner */}
+      <section className="bg-white border border-slate-200 rounded-xl p-5 sm:p-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">
-              Reto rápido: Calcula ε-C(x)
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">
-              Elige una estación y marca todos los andenes a los que llegas caminando SIN pagar boleto.
+            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-orange-700 bg-orange-50 border border-orange-200 px-2.5 py-1 rounded-full mb-2">
+              <Table2 className="w-3.5 h-3.5" />
+              <span>Lámina 2 · Cerradura Épsilon y Regla de los 3 Pasos</span>
+            </div>
+            <h2 className="text-xl font-bold text-slate-900">
+              Capítulo 2: Cómo llenar la tabla `ε-C → δ(x, σ) → ε-C` ({spec.title})
+            </h2>
+            <p className="text-sm text-slate-600 mt-1 max-w-3xl leading-relaxed">
+              Para cada estación <strong>x</strong> y cada boleto <strong>σ ∈ {`{${alphabet.join(', ')}}`}</strong>,
+              caminas gratis por <strong>ε</strong> antes del viaje (Paso 1), tomas el tren con <strong>σ</strong> (Paso 2),
+              y vuelves a caminar gratis por <strong>ε</strong> al bajar (Paso 3). Quien alcance un estado final original por pasillos <strong>ε</strong> hereda <strong>EF nuevo = 1</strong>.
             </p>
           </div>
 
-          <div className="grid grid-cols-6 gap-1.5">
-            {ALL_STATES.map((st) => (
-              <button
-                key={st}
-                onClick={() => handleSelectStationForGame(st)}
-                className={`py-2 rounded-lg text-sm font-mono font-semibold border transition-colors ${
-                  targetStation === st
-                    ? 'bg-slate-900 text-white border-slate-900'
-                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                {st}
-              </button>
-            ))}
-          </div>
-
-          <div className="text-xs text-slate-700 font-medium">
-            Si estás en <span className="font-mono font-bold text-slate-900">{targetStation}</span> ({targetMeta.metroName}), ¿cuáles estaciones forman su ε-C?
-          </div>
-
-          <div className="grid grid-cols-3 gap-2">
-            {ALL_STATES.map((st) => {
-              const picked = userPick.includes(st);
-              return (
-                <button
-                  key={st}
-                  onClick={() => togglePick(st)}
-                  className={`py-2 px-3 rounded-lg text-xs font-mono font-semibold border transition-colors ${
-                    picked
-                      ? 'bg-sky-600 text-white border-sky-600'
-                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  {picked ? `✓ ${st}` : st}
-                </button>
-              );
-            })}
-          </div>
-
-          <button
-            onClick={verifyClosure}
-            className="w-full py-2.5 px-4 rounded-lg text-xs font-semibold bg-orange-600 text-white hover:bg-orange-700 transition-colors"
-          >
-            Comprobar alcance gratis
-          </button>
-
-          {checkedClosure !== null && (
-            <div
-              className={`rounded-lg p-3.5 text-xs leading-relaxed border ${
-                checkedClosure
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                  : 'bg-rose-50 border-rose-200 text-rose-900'
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              onClick={() => setMode('guided')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-colors ${
+                mode === 'guided'
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
-              <div className="font-semibold mb-1">
-                {checkedClosure
-                  ? `¡Exacto! ε-C(${targetStation}) = {${targetMeta.epsilonClosure.join(', ')}}`
-                  : `Casi — revisa las flechas azules (ε) que salen de ${targetStation}.`}
-              </div>
-              <p>{targetMeta.closureReason}</p>
-            </div>
-          )}
+              Modo Guiado (Explorar flechas)
+            </button>
+            <button
+              onClick={() => setMode('practice')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-colors ${
+                mode === 'practice'
+                  ? 'bg-orange-600 text-white border-orange-600'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              Modo Práctica (Llenar tabla)
+            </button>
+          </div>
         </div>
       </section>
 
-      {/* Interactive Step-by-Step Table Builder + Visual Arrow Flow */}
-      <section className="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 space-y-5">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      {/* Interactive NFA Map + Mini-game ε-C */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+        <div className="xl:col-span-7 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-white border border-slate-200 rounded-lg px-4 py-2.5">
+            <span className="text-xs text-slate-600">
+              Haz clic en cualquier celda de la tabla inferior para iluminar exactamente esos saltos en el mapa.
+            </span>
+            <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showNewAcceptsOnMap}
+                onChange={(e) => setShowNewAcceptsOnMap(e.target.checked)}
+                className="rounded border-slate-300 text-orange-600 focus:ring-orange-500"
+              />
+              <span>Mostrar EF nuevo (círculo punteado)</span>
+            </label>
+          </div>
+
+          <MetroMapNFA
+            bundle={bundle}
+            activeStates={mapHighlights.activeStates}
+            highlightedTransitions={mapHighlights.transitions}
+            selectedStation={focus.state}
+            onSelectStation={(st) => setFocus((prev) => ({ ...prev, state: st }))}
+            showNewAccepts={showNewAcceptsOnMap}
+            caption={`Ruta resaltada: ${focus.state} con boleto "${activeSymbol}"`}
+          />
+        </div>
+
+        {/* Right Column: Live 4-box Arrow Pipeline + Mini-game */}
+        <div className="xl:col-span-5 space-y-4">
+          {/* 4-Box Arrow Pipeline */}
+          {activeRow && activeCell && (
+            <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+              <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Tubería en vivo de 3 pasos
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Estación <span className="font-mono text-orange-700">{activeRow.state}</span> ({stations[activeRow.state]?.metroName}) con boleto{' '}
+                    <span className="font-mono bg-orange-100 text-orange-900 px-1.5 py-0.5 rounded">
+                      {activeSymbol}
+                    </span>
+                  </h3>
+                </div>
+                <div className="flex items-center gap-1">
+                  {alphabet.map((sym) => (
+                    <button
+                      key={sym}
+                      onClick={() => setFocus((prev) => ({ ...prev, symbol: sym }))}
+                      className={`px-2.5 py-1 rounded text-xs font-mono font-bold border ${
+                        activeSymbol === sym
+                          ? 'bg-orange-600 text-white border-orange-600'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {sym}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 4 visual pipeline boxes */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                  <div className="text-[10px] font-semibold uppercase text-slate-500">0. Estado x</div>
+                  <div className="font-mono font-bold text-sm text-slate-900 mt-1">{activeRow.state}</div>
+                </div>
+                <div className="bg-sky-50 border border-sky-200 rounded-lg p-2.5">
+                  <div className="text-[10px] font-semibold uppercase text-sky-700">1. ε-C({activeRow.state})</div>
+                  <div className="font-mono font-bold text-xs text-sky-900 mt-1 break-all">{activeRow.epsilonC}</div>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                  <div className="text-[10px] font-semibold uppercase text-amber-800">2. δ(·, {activeSymbol})</div>
+                  <div className="font-mono font-bold text-xs text-amber-900 mt-1 break-all">{activeCell.delta}</div>
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5">
+                  <div className="text-[10px] font-semibold uppercase text-emerald-800">3. ε-C final</div>
+                  <div className="font-mono font-bold text-xs text-emerald-900 mt-1 break-all">{activeCell.closure}</div>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 text-xs text-slate-700 leading-relaxed space-y-1.5">
+                <p>
+                  <strong className="text-slate-900">Explicación paso a paso:</strong> {activeCell.why}
+                </p>
+                <p className="text-slate-600">
+                  <strong className="text-slate-800">Regla de Examen (EF):</strong> {activeRow.whyEF}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Mini-Game: Practice ε-C(x) */}
+          <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-sky-600" />
+                <h3 className="text-sm font-bold text-slate-900">Mini-Reto: Calcula ε-C(x) gratis</h3>
+              </div>
+              <select
+                value={miniState}
+                onChange={(e) => {
+                  const st = e.target.value;
+                  setMiniState(st);
+                  setMiniPicked([st]);
+                  setMiniChecked(false);
+                }}
+                className="text-xs font-mono font-semibold border border-slate-200 rounded-md px-2 py-1 bg-slate-50"
+              >
+                {spec.states.map((st) => (
+                  <option key={st} value={st}>
+                    Calcular ε-C({st})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <p className="text-xs text-slate-600">
+              Desde <strong>{miniState}</strong>, marca todos los andenes a los que llegas{' '}
+              <strong>solo caminando por flechas ε</strong> (incluyendo el propio {miniState}):
+            </p>
+
+            <div className="flex flex-wrap gap-1.5">
+              {spec.states.map((st) => {
+                const picked = miniPicked.includes(st);
+                return (
+                  <button
+                    key={st}
+                    onClick={() => toggleMiniPick(st)}
+                    className={`px-3 py-1.5 rounded-md font-mono text-xs font-bold border transition-colors ${
+                      picked
+                        ? 'bg-sky-600 text-white border-sky-600'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    {st}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <button
+                onClick={handleCheckMini}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800"
+              >
+                Comprobar ε-C({miniState})
+              </button>
+              {miniChecked && (
+                <div
+                  className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
+                    miniIsCorrect ? 'text-emerald-700' : 'text-rose-700'
+                  }`}
+                >
+                  {miniIsCorrect ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>¡Exacto! {targetMiniRow?.epsilonC}</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-4 h-4" />
+                      <span>Respuesta correcta: {targetMiniRow?.epsilonC}</span>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {miniChecked && targetMiniRow && (
+              <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-md p-2.5">
+                {targetMiniRow.closureReason}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Stage 2 Table (Lámina 2 Exact 3-step Format) */}
+      <section className="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">
-              Tabla Interactiva Paso a Paso: De AFN-ε a AFN (Imagen 2)
+            <h3 className="text-base font-bold text-slate-900">
+              Tabla Completa de Cerraduras (Lámina 2 · Paso 1 → Paso 2 → Paso 3)
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
-              Progreso: {progressCurrent} de {ALL_STEPS.length} celdas completadas · Haz clic en cualquier celda para ver sus flechas.
+            <p className="text-xs text-slate-500 mt-0.5">
+              {mode === 'guided'
+                ? 'Haz clic en cualquier celda de símbolo para inspeccionar su derivación en la tubería.'
+                : 'Selecciona el conjunto resultante para cada paso y pulsa Comprobar.'}
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Mode switch */}
-            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+          {mode === 'practice' && (
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => {
-                  setTableMode('guided');
-                  metroAudio.playTicketClick();
+                  setPracticeVerified(true);
+                  if (practiceStats.correct === practiceStats.total) metroAudio.playValidExitChime();
+                  else metroAudio.playTicketClick();
                 }}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
-                  tableMode === 'guided'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700"
               >
-                Modo Guiado
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Comprobar ({practiceStats.correct}/{practiceStats.total})</span>
+              </button>
+              <button
+                onClick={handleAutoFillPractice}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Revelar solución</span>
               </button>
               <button
                 onClick={() => {
-                  setTableMode('practice');
-                  metroAudio.playTicketClick();
+                  setPracticeAnswers({});
+                  setPracticeVerified(false);
                 }}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
-                  tableMode === 'practice'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50"
               >
-                Modo Práctica (Llenar yo)
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reiniciar</span>
               </button>
             </div>
-
-            <button
-              onClick={handleResetTable}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 whitespace-nowrap"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reiniciar</span>
-            </button>
-
-            <button
-              onClick={handleFillAll}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 whitespace-nowrap"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Completar tabla</span>
-            </button>
-          </div>
+          )}
         </div>
 
-        {/* Guided playback controls bar */}
-        {tableMode === 'guided' && (
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
-            <div className="text-xs text-slate-700">
-              <span className="font-semibold text-slate-900">Paso activo: </span>
-              Fila <span className="font-mono font-bold text-orange-700">{activeStepDef.state}</span> →{' '}
-              <span className="font-mono font-semibold">{activeStepDef.label}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handlePrevGuidedStep}
-                disabled={guidedStepCount <= 1}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-40 whitespace-nowrap"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-                <span>Anterior</span>
-              </button>
-              <button
-                onClick={handleNextGuidedStep}
-                disabled={guidedStepCount >= ALL_STEPS.length}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-40 whitespace-nowrap"
-              >
-                <span>Llenar siguiente celda</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* VISUAL ARROW FLOW DIAGRAM explaining WHY */}
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 sm:p-5 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
-              <HelpCircle className="w-4 h-4 text-orange-600" />
-              <span>{arrowPipeline.modeTitle}</span>
-            </div>
-            <span className="text-xs text-slate-500">
-              Sigue las flechas de izquierda a derecha para ver de dónde sale el valor
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-7 gap-2 items-center">
-            {arrowPipeline.steps.map((step, idx) => {
-              const isHighlightedBox = idx === arrowPipeline.activeBoxIndex;
-              return (
-                <React.Fragment key={idx}>
-                  <div
-                    className={`rounded-lg border p-3 text-center transition-colors ${
-                      isHighlightedBox
-                        ? 'bg-orange-600 border-orange-700 text-white'
-                        : 'bg-white border-slate-200 text-slate-900'
-                    }`}
-                  >
-                    <div
-                      className={`text-[11px] font-medium ${
-                        isHighlightedBox ? 'text-orange-100' : 'text-slate-500'
-                      }`}
-                    >
-                      {step.boxTitle}
-                    </div>
-                    <div className="font-mono text-sm sm:text-base font-bold mt-1">
-                      {step.value}
-                    </div>
-                  </div>
-
-                  {idx < arrowPipeline.steps.length - 1 && (
-                    <div className="flex flex-col items-center justify-center text-center py-1">
-                      <div className="text-[11px] font-semibold text-sky-800 leading-tight">
-                        {step.arrowLabel}
-                      </div>
-                      <ArrowRight className="w-5 h-5 text-orange-600 my-0.5 rotate-90 md:rotate-0" />
-                      <div className="text-[10px] text-slate-500 leading-tight">
-                        {step.arrowSub}
-                      </div>
-                    </div>
-                  )}
-                </React.Fragment>
-              );
-            })}
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-lg p-3.5 text-sm text-slate-800 leading-relaxed">
-            <span className="font-semibold text-slate-900">¿Por qué da eso? </span>
-            {arrowPipeline.explanation}
-          </div>
-        </div>
-
-        {/* The Interactive Table */}
-        <div className="overflow-x-auto border border-slate-200 rounded-lg">
-          <table className="w-full text-left border-collapse text-xs sm:text-sm tabular-nums">
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse min-w-[680px]">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
-                <th className="py-2.5 px-3 font-semibold">Estación</th>
-                <th className="py-2.5 px-3 font-semibold font-mono text-sky-800">1. ε-C →</th>
-                <th className="py-2.5 px-3 font-semibold font-mono">2. δ(x, a) →</th>
-                <th className="py-2.5 px-3 font-semibold font-mono text-orange-800">3. ε-C → AFN(a)</th>
-                <th className="py-2.5 px-3 font-semibold font-mono">2. δ(x, b) →</th>
-                <th className="py-2.5 px-3 font-semibold font-mono text-orange-800">3. ε-C → AFN(b)</th>
-                <th className="py-2.5 px-3 font-semibold font-mono">EF orig.</th>
-                <th className="py-2.5 px-3 font-semibold font-mono text-emerald-800">EF nuevo</th>
+              <tr className="bg-slate-900 text-white">
+                <th className="px-3 py-2.5 text-left font-semibold border border-slate-700">Est.</th>
+                <th className="px-3 py-2.5 text-left font-semibold border border-slate-700 bg-sky-900/60">
+                  1. ε-C(x)
+                </th>
+                {alphabet.map((sym) => (
+                  <React.Fragment key={sym}>
+                    <th className="px-3 py-2.5 text-left font-semibold border border-slate-700 bg-amber-900/50">
+                      2. δ(x, {sym})
+                    </th>
+                    <th className="px-3 py-2.5 text-left font-semibold border border-slate-700 bg-emerald-900/60">
+                      3. ε-C → AFN({sym})
+                    </th>
+                  </React.Fragment>
+                ))}
+                <th className="px-2.5 py-2.5 text-center font-semibold border border-slate-700">EF orig.</th>
+                <th className="px-2.5 py-2.5 text-center font-semibold border border-slate-700 bg-orange-900/70">
+                  EF nuevo
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 font-mono">
-              {IMAGE2_TABLE.map((row) => {
-                const isSelectedRow = activeStepDef.state === row.state;
-                const efChanged = row.efOriginal !== row.efNew;
-
-                const renderCell = (field: StepField, options: string[], accentClass: string) => {
-                  const stepObj = ALL_STEPS.find((s) => s.state === row.state && s.field === field)!;
-                  const isFocused = focusedStepIdx === stepObj.index;
-                  const truthVal = row[field];
-
-                  if (tableMode === 'guided') {
-                    const revealed = isCellRevealedInGuided(row.state, field);
-                    return (
-                      <td className="py-2 px-2.5">
-                        <button
-                          onClick={() => {
-                            if (!revealed) {
-                              setGuidedStepCount(stepObj.index + 1);
-                            }
-                            setFocusedStepIdx(stepObj.index);
-                            metroAudio.playTicketClick();
-                          }}
-                          className={`w-full text-left px-2.5 py-1.5 rounded border text-xs transition-colors ${
-                            !revealed
-                              ? 'bg-slate-50 border-dashed border-slate-300 text-slate-400 hover:border-orange-400 hover:text-orange-700'
-                              : isFocused
-                              ? 'bg-orange-600 border-orange-700 text-white font-semibold'
-                              : accentClass
-                          }`}
-                        >
-                          {revealed ? `${truthVal}${field === 'efNew' && efChanged ? ' ★' : ''}` : '?'}
-                        </button>
-                      </td>
-                    );
-                  }
-
-                  // Practice mode
-                  const k = cellKey(row.state, field);
-                  const val = practiceValues[k] || '';
-                  const isCorrect = val === truthVal;
-
-                  return (
-                    <td className="py-2 px-2">
-                      <select
-                        value={val}
-                        onFocus={() => setFocusedStepIdx(stepObj.index)}
-                        onChange={(e) => {
-                          const nextVal = e.target.value;
-                          setFocusedStepIdx(stepObj.index);
-                          setPracticeValues((prev) => ({ ...prev, [k]: nextVal }));
-                          if (nextVal === truthVal) metroAudio.playTransferChime();
-                          else if (nextVal !== '') metroAudio.playDeadEndBuzz();
-                        }}
-                        aria-label={`Fila ${row.state} columna ${field}`}
-                        className={`w-full px-2 py-1.5 rounded border text-xs font-mono font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500 ${
-                          val === ''
-                            ? 'bg-white border-slate-300 text-slate-500'
-                            : isCorrect
-                            ? 'bg-emerald-50 border-emerald-400 text-emerald-900'
-                            : 'bg-rose-50 border-rose-400 text-rose-900'
-                        }`}
-                      >
-                        <option value="">?</option>
-                        {options.map((opt) => (
-                          <option key={opt} value={opt}>
-                            {opt}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  );
-                };
-
+            <tbody>
+              {stage2Rows.map((row) => {
+                const isSelectedRow = focus.state === row.state;
                 return (
                   <tr
                     key={row.state}
-                    className={isSelectedRow ? 'bg-orange-50/40' : 'hover:bg-slate-50'}
+                    className={isSelectedRow ? 'bg-orange-50/40' : 'hover:bg-slate-50/80'}
                   >
-                    <td className="py-2.5 px-3 font-semibold text-slate-900 whitespace-nowrap">
-                      <div className="flex items-center justify-between gap-2">
+                    <td className="px-3 py-2.5 border border-slate-200 font-mono font-bold text-slate-900">
+                      <button
+                        onClick={() => setFocus((prev) => ({ ...prev, state: row.state }))}
+                        className="inline-flex items-center gap-1.5 hover:text-orange-700"
+                        title={stations[row.state]?.metroName}
+                      >
                         <span>{row.state}</span>
-                        {tableMode === 'guided' && (
-                          <button
-                            onClick={() => handleFillRow(row.state)}
-                            title={`Completar fila ${row.state}`}
-                            className="text-[10px] font-sans font-medium text-slate-500 hover:text-orange-700 underline"
-                          >
-                            llenar
-                          </button>
+                        {row.state === spec.startState && (
+                          <span className="text-[10px] font-sans font-semibold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                            Ini
+                          </span>
                         )}
-                      </div>
+                      </button>
                     </td>
-                    {renderCell('epsilonC', SET_OPTIONS, 'bg-sky-50 border-sky-200 text-sky-900 hover:bg-sky-100')}
-                    {renderCell('deltaA', SET_OPTIONS, 'bg-white border-slate-200 text-slate-800 hover:bg-slate-100')}
-                    {renderCell('epsilonCA', SET_OPTIONS, 'bg-orange-50 border-orange-200 text-orange-900 hover:bg-orange-100')}
-                    {renderCell('deltaB', SET_OPTIONS, 'bg-white border-slate-200 text-slate-800 hover:bg-slate-100')}
-                    {renderCell('epsilonCB', SET_OPTIONS, 'bg-orange-50 border-orange-200 text-orange-900 hover:bg-orange-100')}
-                    <td className="py-2.5 px-3 text-slate-500">{row.efOriginal}</td>
-                    {renderCell(
-                      'efNew',
-                      EF_OPTIONS,
-                      row.efNew === '1'
-                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-semibold hover:bg-emerald-100'
-                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100'
-                    )}
+
+                    <td className="px-3 py-2.5 border border-slate-200 font-mono text-sky-900 bg-sky-50/40">
+                      {row.epsilonC}
+                    </td>
+
+                    {alphabet.map((sym) => {
+                      const cell = row.bySymbol[sym];
+                      const isCellActive = focus.state === row.state && activeSymbol === sym;
+                      const deltaKey = `${row.state}|${sym}|delta`;
+                      const closureKey = `${row.state}|${sym}|closure`;
+
+                      if (mode === 'guided') {
+                        return (
+                          <React.Fragment key={sym}>
+                            <td
+                              onClick={() => setFocus({ state: row.state, symbol: sym })}
+                              className={`px-3 py-2.5 border border-slate-200 font-mono cursor-pointer transition-colors ${
+                                isCellActive
+                                  ? 'bg-amber-100 text-amber-950 font-bold ring-1 ring-inset ring-amber-400'
+                                  : 'text-amber-900 hover:bg-amber-50'
+                              }`}
+                            >
+                              {cell.delta}
+                            </td>
+                            <td
+                              onClick={() => setFocus({ state: row.state, symbol: sym })}
+                              className={`px-3 py-2.5 border border-slate-200 font-mono cursor-pointer transition-colors ${
+                                isCellActive
+                                  ? 'bg-emerald-100 text-emerald-950 font-bold ring-1 ring-inset ring-emerald-500'
+                                  : 'text-emerald-900 font-semibold hover:bg-emerald-50'
+                              }`}
+                            >
+                              {cell.closure}
+                            </td>
+                          </React.Fragment>
+                        );
+                      }
+
+                      const dVal = practiceAnswers[deltaKey] ?? '';
+                      const cVal = practiceAnswers[closureKey] ?? '';
+                      const dOk = dVal === cell.delta;
+                      const cOk = cVal === cell.closure;
+
+                      return (
+                        <React.Fragment key={sym}>
+                          <td className="px-2 py-2 border border-slate-200">
+                            <select
+                              value={dVal}
+                              onChange={(e) => {
+                                setFocus({ state: row.state, symbol: sym });
+                                setPracticeAnswers((prev) => ({ ...prev, [deltaKey]: e.target.value }));
+                              }}
+                              className={`w-full font-mono text-xs rounded border px-1.5 py-1 ${
+                                practiceVerified && dVal
+                                  ? dOk
+                                    ? 'border-emerald-500 bg-emerald-50 text-emerald-900'
+                                    : 'border-rose-500 bg-rose-50 text-rose-900'
+                                  : 'border-slate-300 bg-white'
+                              }`}
+                            >
+                              <option value="">-- elegir --</option>
+                              {practiceSetOptions.map((o) => (
+                                <option key={o} value={o}>
+                                  {o}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-2 py-2 border border-slate-200">
+                            <select
+                              value={cVal}
+                              onChange={(e) => {
+                                setFocus({ state: row.state, symbol: sym });
+                                setPracticeAnswers((prev) => ({ ...prev, [closureKey]: e.target.value }));
+                              }}
+                              className={`w-full font-mono text-xs rounded border px-1.5 py-1 ${
+                                practiceVerified && cVal
+                                  ? cOk
+                                    ? 'border-emerald-500 bg-emerald-50 text-emerald-900'
+                                    : 'border-rose-500 bg-rose-50 text-rose-900'
+                                  : 'border-slate-300 bg-white'
+                              }`}
+                            >
+                              <option value="">-- elegir --</option>
+                              {practiceSetOptions.map((o) => (
+                                <option key={o} value={o}>
+                                  {o}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                        </React.Fragment>
+                      );
+                    })}
+
+                    <td className="px-2.5 py-2.5 border border-slate-200 text-center font-mono">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded font-bold ${
+                          row.efOriginal === '1'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        {row.efOriginal}
+                      </span>
+                    </td>
+
+                    <td className="px-2.5 py-2.5 border border-slate-200 text-center font-mono bg-orange-50/40">
+                      {mode === 'guided' ? (
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded font-bold ${
+                            row.efNew === '1'
+                              ? 'bg-orange-600 text-white'
+                              : 'text-slate-400'
+                          }`}
+                        >
+                          {row.efNew}
+                        </span>
+                      ) : (
+                        <select
+                          value={practiceAnswers[`${row.state}|efNew`] ?? ''}
+                          onChange={(e) =>
+                            setPracticeAnswers((prev) => ({
+                              ...prev,
+                              [`${row.state}|efNew`]: e.target.value,
+                            }))
+                          }
+                          className={`font-mono text-xs rounded border px-1.5 py-1 ${
+                            practiceVerified && practiceAnswers[`${row.state}|efNew`]
+                              ? practiceAnswers[`${row.state}|efNew`] === row.efNew
+                                ? 'border-emerald-500 bg-emerald-50 text-emerald-900 font-bold'
+                                : 'border-rose-500 bg-rose-50 text-rose-900'
+                              : 'border-slate-300 bg-white'
+                          }`}
+                        >
+                          <option value="">?</option>
+                          <option value="∅">∅</option>
+                          <option value="1">1</option>
+                        </select>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -683,20 +651,103 @@ export const Stage2Closure: React.FC<{ onNextStage: () => void }> = ({ onNextSta
           </table>
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-slate-100">
-          <div className="text-xs text-slate-600 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+        {/* Summary AFN Table (Lámina 2 derecha / Lámina 3 izquierda) */}
+        <div className="pt-2">
+          <button
+            onClick={() => setShowSummaryTable((v) => !v)}
+            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 hover:text-orange-700"
+          >
+            <GraduationCap className="w-4 h-4 text-orange-600" />
             <span>
-              <strong>Regla de oro del EF nuevo:</strong> Si en el Paso 1 (ε-C) puedes caminar gratis hasta{' '}
-              <span className="font-mono font-semibold">F</span>, esa fila hereda salida válida (<span className="font-mono font-semibold">1</span>).
+              {showSummaryTable ? 'Ocultar' : 'Mostrar'} Tabla Resumen AFN (Lámina 2 derecha · Base para Subconjuntos)
             </span>
-          </div>
+          </button>
+
+          {showSummaryTable && (
+            <div className="mt-3 grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+              <div className="lg:col-span-8 overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-800 text-white">
+                      <th className="px-3 py-2 text-left border border-slate-700">AFN (x)</th>
+                      <th className="px-3 py-2 text-left border border-slate-700 text-sky-200">ε-C(x)</th>
+                      {alphabet.map((sym) => (
+                        <th key={sym} className="px-3 py-2 text-left border border-slate-700">
+                          {sym}
+                        </th>
+                      ))}
+                      <th className="px-2.5 py-2 text-center border border-slate-700">EF orig</th>
+                      <th className="px-2.5 py-2 text-center border border-slate-700 bg-orange-900/70">
+                        EF nuevo
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stage2Rows.map((row) => (
+                      <tr key={row.state} className="hover:bg-slate-50">
+                        <td className="px-3 py-1.5 border border-slate-200 font-mono font-bold text-slate-900">
+                          {row.state}
+                        </td>
+                        <td className="px-3 py-1.5 border border-slate-200 font-mono text-sky-800">
+                          {row.epsilonC}
+                        </td>
+                        {alphabet.map((sym) => (
+                          <td
+                            key={sym}
+                            className="px-3 py-1.5 border border-slate-200 font-mono font-semibold text-emerald-900"
+                          >
+                            {row.bySymbol[sym].closure}
+                          </td>
+                        ))}
+                        <td className="px-2.5 py-1.5 border border-slate-200 text-center font-mono">
+                          {row.efOriginal}
+                        </td>
+                        <td className="px-2.5 py-1.5 border border-slate-200 text-center font-mono font-bold">
+                          <span
+                            className={
+                              row.efNew === '1' ? 'text-orange-700' : 'text-slate-400'
+                            }
+                          >
+                            {row.efNew}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="lg:col-span-4 bg-amber-50 border border-amber-200 rounded-lg p-3.5 text-xs space-y-2">
+                <div className="flex items-center gap-1.5 font-semibold text-amber-900">
+                  <HelpCircle className="w-4 h-4 shrink-0" />
+                  <span>Conjuntos candidatos para el AFD</span>
+                </div>
+                <p className="text-amber-900/90 leading-relaxed">
+                  Al limpiar la columna 3 ya conocemos todas las bolsas que aparecerán al unir filas en el Paso 3:
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {candidateSets.map((cs) => (
+                    <span
+                      key={cs}
+                      className="px-2 py-0.5 rounded bg-white border border-amber-300 font-mono font-bold text-amber-900"
+                    >
+                      {cs}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer CTA */}
+        <div className="pt-3 border-t border-slate-100 flex justify-end">
           <button
             onClick={onNextStage}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 transition-colors"
           >
             <span>Ir al Capítulo 3: Súper-Andenes (AFD)</span>
-            <ArrowRight className="w-3.5 h-3.5" />
+            <ArrowRight className="w-4 h-4" />
           </button>
         </div>
       </section>

@@ -106,14 +106,31 @@ export const STATION_VISUAL_SPECS: Record<string, StationVisualSpec> = {
   },
 };
 
+const FALLBACK_LINE_PAIRS: CdmxLineCode[][] = [
+  ['1', '2'],
+  ['3', '7'],
+  ['8', '9'],
+  ['5', 'A'],
+  ['2', '3'],
+  ['1', '9'],
+  ['7', '8'],
+  ['2', '8'],
+];
+
 export function getStationVisualSpec(id: string): StationVisualSpec {
   if (STATION_VISUAL_SPECS[id]) return STATION_VISUAL_SPECS[id];
-  // Library generic fallback nodes (q0, q1, etc.)
+  if (id === '[∅]' || id === '∅') return STATION_VISUAL_SPECS['[∅]'];
+
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  const pair = FALLBACK_LINE_PAIRS[hash % FALLBACK_LINE_PAIRS.length];
   return {
-    lines: ['1'],
-    primaryColor: '#E91E8C',
-    secondaryColor: '#F26522',
-    officialName: id,
+    lines: pair,
+    primaryColor: CDMX_LINES[pair[0]].color,
+    secondaryColor: CDMX_LINES[pair[1]].color,
+    officialName: `Estación ${id}`,
     glyphId: 'generic',
   };
 }

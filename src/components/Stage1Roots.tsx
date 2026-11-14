@@ -1,163 +1,85 @@
-import React, { useMemo, useState } from 'react';
-import { ArrowRight, ChevronDown, ChevronUp, RotateCcw, StepForward } from 'lucide-react';
-import { MetroMapNFA } from './MetroMapNFA';
-import { NFA_STATIONS, NfaState, ROOT_WHY_QUESTIONS, SymbolInput } from '../data/automataData';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  ArrowRight,
+  ChevronDown,
+  ChevronUp,
+  Footprints,
+  Info,
+  RotateCcw,
+  StepForward,
+  TrainFront,
+} from 'lucide-react';
+import { ROOT_WHY_QUESTIONS } from '../data/automataData';
+import {
+  DEFAULT_EXERCISE_BUNDLE,
+  SolvedMethodBundle,
+  traceNfaExecution,
+} from '../engine/automataMethodEngine';
 import { metroAudio } from '../utils/metroAudio';
+import { MetroMapNFA } from './MetroMapNFA';
 import { RegexLibrarySection } from './RegexLibrarySection';
 
-interface SimulationStep {
-  stepIndex: number;
-  consumedSymbol: SymbolInput | 'Inicio';
-  activeStates: NfaState[];
-  highlightedEdges: string[];
-  narration: string;
+interface Stage1RootsProps {
+  bundle?: SolvedMethodBundle;
+  onNextStage: () => void;
 }
 
-function epsilonClosureSet(states: NfaState[]): { result: NfaState[]; edges: string[] } {
-  const visited = new Set<NfaState>(states);
-  const edges: string[] = [];
-  const queue: NfaState[] = [...states];
+export const Stage1Roots: React.FC<Stage1RootsProps> = ({
+  bundle = DEFAULT_EXERCISE_BUNDLE,
+  onNextStage,
+}) => {
+  const { spec, stations, testCases } = bundle;
+  const defaultTicket = useMemo(() => {
+    const firstValid = testCases.find((t) => t.expectedValid && t.text.length > 0);
+    return firstValid?.text ?? spec.alphabet.join('');
+  }, [testCases, spec.alphabet]);
 
-  while (queue.length > 0) {
-    const curr = queue.shift()!;
-    if (curr === 'C') {
-      if (!visited.has('D')) {
-        visited.add('D');
-        queue.push('D');
-      }
-      edges.push('C-e-D');
-      if (!visited.has('F')) {
-        visited.add('F');
-        queue.push('F');
-      }
-      edges.push('C-e-F');
-    } else if (curr === 'E') {
-      if (!visited.has('D')) {
-        visited.add('D');
-        queue.push('D');
-      }
-      edges.push('E-e-D');
-      if (!visited.has('F')) {
-        visited.add('F');
-        queue.push('F');
-      }
-      edges.push('E-e-F');
-    }
-  }
+  const [selectedInspect, setSelectedInspect] = useState<string>(spec.startState);
+  const [ticketString, setTicketString] = useState<string>(defaultTicket);
+  const [stepCursor, setStepCursor] = useState<number>(0);
+  const [openWhyId, setOpenWhyId] = useState<string>(ROOT_WHY_QUESTIONS[0]?.id ?? '');
 
-  return { result: Array.from(visited), edges };
-}
+  useEffect(() => {
+    setSelectedInspect(bundle.spec.startState);
+    const firstValid = bundle.testCases.find((t) => t.expectedValid && t.text.length > 0);
+    setTicketString(firstValid?.text ?? bundle.spec.alphabet.join(''));
+    setStepCursor(0);
+  }, [bundle]);
 
-function buildNfaTrace(input: string): SimulationStep[] {
-  const initial = epsilonClosureSet(['A']);
-  const steps: SimulationStep[] = [
-    {
-      stepIndex: 0,
-      consumedSymbol: 'Inicio',
-      activeStates: initial.result,
-      highlightedEdges: initial.edges,
-      narration:
-        'Entras por Pantitlán (A). Como de A no sale ningún pasillo gratis (ε), estás únicamente en A.',
-    },
-  ];
+  const trace = useMemo(
+    () => traceNfaExecution(bundle, ticketString),
+    [bundle, ticketString]
+  );
 
-  let current = initial.result;
-
-  for (let i = 0; i < input.length; i++) {
-    const ch = input[i] as SymbolInput;
-    const moved = new Set<NfaState>();
-    const trainEdges: string[] = [];
-
-    for (const st of current) {
-      if (st === 'A' && ch === 'a') {
-        moved.add('B');
-        trainEdges.push('A-a-B');
-      } else if (st === 'B' && ch === 'b') {
-        moved.add('C');
-        trainEdges.push('B-b-C');
-      } else if (st === 'D' && ch === 'a') {
-        moved.add('E');
-        trainEdges.push('D-a-E');
-      }
-    }
-
-    if (moved.size === 0) {
-      steps.push({
-        stepIndex: i + 1,
-        consumedSymbol: ch,
-        activeStates: [],
-        highlightedEdges: [],
-        narration: `Mostraste el boleto "${ch}", pero ninguna de tus posiciones actuales (${current.join(', ')}) tiene tren "${ch}". El pasajero desaparece del mapa (camino muerto ∅).`,
-      });
-      current = [];
-      continue;
-    }
-
-    const afterClosure = epsilonClosureSet(Array.from(moved));
-    const movedList = Array.from(moved).join(', ');
-    const closureList = afterClosure.result.join(', ');
-
-    let narration = `Pagas boleto "${ch}" y el tren te deja en ${movedList}. `;
-    if (afterClosure.result.length > moved.size) {
-      narration += `¡Atención! Apenas pisas ${movedList}, los pasillos gratis (ε) te permiten clonarte y estar al mismo tiempo en {${closureList}}.`;
-    } else {
-      narration += `No hay pasillos gratis desde ${movedList}, así que sigues en {${closureList}}.`;
-    }
-
-    steps.push({
-      stepIndex: i + 1,
-      consumedSymbol: ch,
-      activeStates: afterClosure.result,
-      highlightedEdges: [...trainEdges, ...afterClosure.edges],
-      narration,
-    });
-    current = afterClosure.result;
-  }
-
-  return steps;
-}
-
-const PRESET_EXAMPLES = [
-  { label: 'ab', note: 'Mínimo válido' },
-  { label: 'aba', note: 'Con 1 vuelta' },
-  { label: 'abaa', note: 'Con 2 vueltas' },
-  { label: 'a', note: 'Incompleto' },
-  { label: 'abb', note: 'Boleto prohibido' },
-];
-
-export const Stage1Roots: React.FC<{ onNextStage: () => void }> = ({ onNextStage }) => {
-  const [ticketString, setTicketString] = useState('aba');
-  const [stepCursor, setStepCursor] = useState(0);
-  const [selectedInspect, setSelectedInspect] = useState<NfaState>('C');
-  const [openWhyId, setOpenWhyId] = useState<string>('why-epsilon');
-
-  const trace = useMemo(() => buildNfaTrace(ticketString), [ticketString]);
-  const safeCursor = Math.min(stepCursor, trace.length - 1);
-  const currentStep = trace[safeCursor];
+  const safeCursor = Math.min(stepCursor, Math.max(0, trace.length - 1));
+  const currentStep = trace[safeCursor] ?? trace[0];
   const isFinalStep = safeCursor === trace.length - 1;
-  const acceptedAtEnd = isFinalStep && currentStep.activeStates.includes('F');
+  const acceptedAtEnd =
+    currentStep?.activeStates.some((st) => spec.acceptStates.includes(st)) ?? false;
 
-  const handleSelectPreset = (str: string) => {
-    setTicketString(str);
+  const inspectInfo = stations[selectedInspect] ?? stations[spec.startState];
+
+  const handleSelectExample = (text: string) => {
+    setTicketString(text);
     setStepCursor(0);
     metroAudio.playTicketClick();
   };
 
-  const handleAppendTicket = (ch: SymbolInput) => {
-    if (ticketString.length >= 9) return;
-    setTicketString((prev) => prev + ch);
+  const handleAppendTicket = (sym: string) => {
+    setTicketString((prev) => prev + sym);
     setStepCursor(0);
     metroAudio.playTicketClick();
   };
 
   const handleStepForward = () => {
-    const nextIdx = Math.min(trace.length - 1, safeCursor + 1);
+    if (safeCursor >= trace.length - 1) return;
+    const nextIdx = safeCursor + 1;
     setStepCursor(nextIdx);
     const nextStep = trace[nextIdx];
-    if (nextStep.activeStates.length === 0) {
-      metroAudio.playDeadEndBuzz();
-    } else if (nextIdx === trace.length - 1 && nextStep.activeStates.includes('F')) {
-      metroAudio.playValidExitChime();
+    const hasAccept = nextStep.activeStates.some((st) => spec.acceptStates.includes(st));
+    if (nextIdx === trace.length - 1) {
+      if (hasAccept) metroAudio.playValidExitChime();
+      else metroAudio.playDeadEndBuzz();
     } else if (nextStep.activeStates.length > 1) {
       metroAudio.playTransferChime();
     } else {
@@ -165,88 +87,165 @@ export const Stage1Roots: React.FC<{ onNextStage: () => void }> = ({ onNextStage
     }
   };
 
-  const inspectedStation = NFA_STATIONS[selectedInspect];
+  const outgoingFromInspect = useMemo(
+    () => spec.transitions.filter((t) => t.from === selectedInspect),
+    [spec.transitions, selectedInspect]
+  );
 
   return (
-    <div className="space-y-8">
-      {/* Step 0: Library of Regex Types & ER -> Diagram -> Table */}
+    <div className="space-y-6">
+      {/* Intro Conceptual */}
       <RegexLibrarySection />
 
-      {/* Intro summary strip */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <div className="lg:col-span-8 space-y-4">
-          <div className="bg-white border border-slate-200 rounded-xl p-5">
-            <div className="text-xs font-medium text-slate-500">
-              Capítulo 1 · La raíz del problema · Imagen 1
+      {/* Active AFN-ε Map + Ghost Passenger Simulator */}
+      <section className="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 space-y-5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+          <div>
+            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-orange-700 bg-orange-50 border border-orange-200 px-2.5 py-1 rounded-full mb-2">
+              <Footprints className="w-3.5 h-3.5" />
+              <span>Lámina 1 · Diagrama Base AFN-ε ({spec.title})</span>
             </div>
-            <h2 className="text-2xl font-bold text-slate-900 mt-1 text-balance">
-              ¿Por qué los pasillos gratis (ε) confunden al torniquete del Metro?
+            <h2 className="text-xl font-bold text-slate-900">
+              Capítulo 1: Viaje del Pasajero Fantasma (por qué necesitamos convertir)
             </h2>
-            <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-              Imagina que la expresión <span className="font-mono font-semibold text-slate-900">(ab)a*</span> es
-              una regla de viaje: primero debes pagar boleto <span className="font-mono font-semibold">a</span>, luego{' '}
-              <span className="font-mono font-semibold">b</span>, y después puedes tomar cero, uno o muchos trenes{' '}
-              <span className="font-mono font-semibold">a</span>. El mapa original usa{' '}
-              <span className="font-semibold text-sky-700">pasillos peatonales gratis (ε)</span> para unir las piezas,
-              pero eso provoca que un pasajero pueda estar en varios andenes a la vez.
+            <p className="text-sm text-slate-600 mt-1 max-w-3xl leading-relaxed">
+              {spec.description} En un AFN-ε puedes clonarte por pasillos gratis{' '}
+              <span className="font-mono font-semibold text-sky-700">ε</span>. Simula una cadena para ver cómo los clones se multiplican o desaparecen antes de construir el AFD.
             </p>
           </div>
 
-          <MetroMapNFA
-            activeStates={currentStep.activeStates}
-            highlightedTransitions={currentStep.highlightedEdges}
-            selectedStation={selectedInspect}
-            onSelectStation={setSelectedInspect}
-            caption="Haz clic en cualquier estación para inspeccionar su función, o usa el simulador de la derecha."
-          />
-
-          {/* Station Inspector Bar */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3 text-xs bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2.5 shrink-0">
             <div>
-              <div className="text-xs text-slate-500">
-                Estación seleccionada · {inspectedStation.role}
-              </div>
-              <div className="text-base font-semibold text-slate-900 mt-0.5">
-                {inspectedStation.id} — {inspectedStation.metroName}
-              </div>
-              <p className="text-sm text-slate-600 mt-1">{inspectedStation.description}</p>
+              <div className="text-slate-500">Inicio</div>
+              <div className="font-mono font-bold text-slate-900">{spec.startState}</div>
             </div>
-            <div className="shrink-0 bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-right">
-              <div className="text-xs text-slate-500">Transbordo gratis (ε-C)</div>
-              <div className="text-base font-mono font-semibold text-sky-700">
-                {'{' + inspectedStation.epsilonClosure.join(', ') + '}'}
+            <div className="h-6 w-px bg-slate-200" />
+            <div>
+              <div className="text-slate-500">Finales (EF)</div>
+              <div className="font-mono font-bold text-emerald-700">
+                {`{${spec.acceptStates.join(', ')}}`}
+              </div>
+            </div>
+            <div className="h-6 w-px bg-slate-200" />
+            <div>
+              <div className="text-slate-500">Alfabeto Σ</div>
+              <div className="font-mono font-bold text-orange-700">
+                {`{${spec.alphabet.join(', ')}}`}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right Control Deck: Ghost Passenger Simulator */}
-        <div className="lg:col-span-4 space-y-5">
-          <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+          {/* Left: Interactive AFN-ε Map + Selected Station Inspector */}
+          <div className="xl:col-span-7 space-y-4">
+            <MetroMapNFA
+              bundle={bundle}
+              activeStates={currentStep?.activeStates ?? []}
+              highlightedTransitions={currentStep?.highlightedEdges ?? []}
+              selectedStation={selectedInspect}
+              onSelectStation={(st) => {
+                setSelectedInspect(st);
+                metroAudio.playTicketClick();
+              }}
+              caption={`Estaciones activas en este paso: ${
+                currentStep?.activeStates.length
+                  ? `{${currentStep.activeStates.join(', ')}}`
+                  : '∅'
+              }`}
+            />
+
+            {inspectInfo && (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded font-mono font-bold text-xs bg-slate-900 text-white">
+                      {inspectInfo.id}
+                    </span>
+                    <span className="font-semibold text-sm text-slate-900">
+                      {inspectInfo.metroName}
+                    </span>
+                    <span className="text-xs text-slate-500">· {inspectInfo.role}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold">
+                    {inspectInfo.isStart && (
+                      <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                        Inicio
+                      </span>
+                    )}
+                    {inspectInfo.isOriginalAccept && (
+                      <span className="px-2 py-0.5 rounded bg-orange-100 text-orange-800">
+                        Final Original
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-slate-700 leading-relaxed">{inspectInfo.description}</p>
+                <div className="text-xs text-slate-600 flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-200">
+                  <Info className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                  <span>
+                    Cerradura gratis{' '}
+                    <strong className="font-mono text-sky-900">
+                      ε-C({inspectInfo.id}) = {`{${inspectInfo.epsilonClosure.join(', ')}}`}
+                    </strong>
+                    : {inspectInfo.closureReason}
+                  </span>
+                </div>
+
+                {outgoingFromInspect.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {outgoingFromInspect.map((tr) => (
+                      <span
+                        key={tr.id}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] font-mono ${
+                          tr.kind === 'walk'
+                            ? 'bg-sky-50 border-sky-200 text-sky-800'
+                            : 'bg-orange-50 border-orange-200 text-orange-900'
+                        }`}
+                      >
+                        {tr.kind === 'walk' ? (
+                          <Footprints className="w-3 h-3" />
+                        ) : (
+                          <TrainFront className="w-3 h-3" />
+                        )}
+                        {tr.from} --({tr.label})→ {tr.to}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Right: Ghost Passenger Simulator */}
+          <div className="xl:col-span-5 bg-white border border-slate-200 rounded-xl p-5 space-y-4">
             <div>
-              <h3 className="text-lg font-semibold text-slate-900">
-                Simulador de Pasajero Fantasma
+              <h3 className="text-base font-bold text-slate-900">
+                Simulador del Pasajero Fantasma (AFN-ε)
               </h3>
-              <p className="text-xs text-slate-500 mt-1">
-                Observa cómo en el AFN-ε un solo pasajero se multiplica en varios andenes.
+              <p className="text-xs text-slate-500 mt-0.5">
+                Observa cómo tus clones caminan gratis por ε antes y después de cada boleto.
               </p>
             </div>
 
-            {/* Preset strings */}
-            <div>
-              <div className="text-xs font-medium text-slate-700 mb-2">
-                Elige una tira de boletos:
+            {/* Preset examples from bundle */}
+            <div className="space-y-1.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Ejemplos del ejercicio
               </div>
-              <div className="flex flex-wrap gap-2">
-                {PRESET_EXAMPLES.map((ex) => (
+              <div className="flex flex-wrap gap-1.5">
+                {testCases.slice(0, 6).map((ex) => (
                   <button
                     key={ex.label}
-                    onClick={() => handleSelectPreset(ex.label)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold border transition-colors whitespace-nowrap ${
-                      ticketString === ex.label
+                    onClick={() => handleSelectExample(ex.text)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-mono font-medium border transition-colors ${
+                      ticketString === ex.text
                         ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        : ex.expectedValid
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                        : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
                     }`}
+                    title={ex.reason}
                   >
                     {ex.label}
                   </button>
@@ -254,27 +253,24 @@ export const Stage1Roots: React.FC<{ onNextStage: () => void }> = ({ onNextStage
               </div>
             </div>
 
-            {/* Custom builder */}
-            <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+            {/* Dynamic Alphabet Builder */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
               <div className="text-xs text-slate-600">
                 Boletos:{' '}
                 <span className="font-mono font-semibold text-slate-900 text-sm">
-                  {ticketString || '—'}
+                  {ticketString || 'ε (vacía)'}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => handleAppendTicket('a')}
-                  className="px-2.5 py-1.5 rounded-md text-xs font-mono font-semibold bg-orange-50 text-orange-800 border border-orange-200 hover:bg-orange-100"
-                >
-                  + a
-                </button>
-                <button
-                  onClick={() => handleAppendTicket('b')}
-                  className="px-2.5 py-1.5 rounded-md text-xs font-mono font-semibold bg-orange-50 text-orange-800 border border-orange-200 hover:bg-orange-100"
-                >
-                  + b
-                </button>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {spec.alphabet.map((sym) => (
+                  <button
+                    key={sym}
+                    onClick={() => handleAppendTicket(sym)}
+                    className="px-2.5 py-1.5 rounded-md text-xs font-mono font-semibold bg-orange-50 text-orange-800 border border-orange-200 hover:bg-orange-100"
+                  >
+                    + {sym}
+                  </button>
+                ))}
                 <button
                   onClick={() => {
                     setTicketString('');
@@ -307,39 +303,41 @@ export const Stage1Roots: React.FC<{ onNextStage: () => void }> = ({ onNextStage
             </div>
 
             {/* Live step readout */}
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-2">
-              <div className="flex items-center justify-between text-xs text-slate-500">
-                <span className="tabular-nums">
-                  Paso {safeCursor} de {trace.length - 1}
-                </span>
-                <span className="font-mono font-semibold text-slate-900">
-                  Posiciones:{' '}
-                  {currentStep.activeStates.length > 0
-                    ? `{${currentStep.activeStates.join(', ')}}`
-                    : '∅ (Ninguna)'}
-                </span>
+            {currentStep && (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-2">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="tabular-nums">
+                    Paso {safeCursor} de {trace.length - 1}
+                  </span>
+                  <span className="font-mono font-semibold text-slate-900">
+                    Posiciones:{' '}
+                    {currentStep.activeStates.length > 0
+                      ? `{${currentStep.activeStates.join(', ')}}`
+                      : '∅ (Ninguna)'}
+                  </span>
+                </div>
+                <p className="text-sm text-slate-800 leading-relaxed">{currentStep.narration}</p>
+
+                {currentStep.activeStates.length > 1 && (
+                  <div className="pt-2 border-t border-slate-200 text-xs text-sky-800 font-medium">
+                    Clones simultáneos: estás en {currentStep.activeStates.length} andenes a la vez.
+                    Convertir al AFD eliminará esta ambigüedad en un solo Súper-Andén.
+                  </div>
+                )}
+
+                {isFinalStep && (
+                  <div
+                    className={`pt-2 border-t border-slate-200 text-xs font-semibold ${
+                      acceptedAtEnd ? 'text-emerald-700' : 'text-rose-700'
+                    }`}
+                  >
+                    {acceptedAtEnd
+                      ? `VEREDICTO: CADENA ACEPTADA — Al menos un clon llegó a {${spec.acceptStates.join(', ')}}.`
+                      : `VEREDICTO: CADENA RECHAZADA — Ningún clon alcanzó {${spec.acceptStates.join(', ')}}.`}
+                  </div>
+                )}
               </div>
-              <p className="text-sm text-slate-800 leading-relaxed">{currentStep.narration}</p>
-
-              {currentStep.activeStates.length > 1 && (
-                <div className="pt-2 border-t border-slate-200 text-xs text-sky-800 font-medium">
-                  Problema detectado: estás clonado en {currentStep.activeStates.length} andenes a la vez.
-                  Un torniquete real no puede hacer eso.
-                </div>
-              )}
-
-              {isFinalStep && (
-                <div
-                  className={`pt-2 border-t border-slate-200 text-xs font-semibold ${
-                    acceptedAtEnd ? 'text-emerald-700' : 'text-rose-700'
-                  }`}
-                >
-                  {acceptedAtEnd
-                    ? 'VEREDICTO: VIAJE VÁLIDO — Al menos uno de tus clones llegó a la salida F.'
-                    : 'VEREDICTO: VIAJE RECHAZADO — Ningún clon alcanzó la salida F.'}
-                </div>
-              )}
-            </div>
+            )}
 
             {/* Playback Controls */}
             <div className="flex items-center gap-2">

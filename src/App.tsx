@@ -10,6 +10,7 @@ import {
   Pause,
   Play,
   RotateCcw,
+  Sliders,
   Sparkles,
   Trophy,
   Volume2,
@@ -17,9 +18,15 @@ import {
   X,
 } from 'lucide-react';
 import { Metro3DCanvas, SceneNetworkMode } from './three/Metro3DCanvas';
-import { DFA_STATIONS, DfaStateId, IMAGE2_TABLE, NFA_STATIONS, NfaState, SymbolInput } from './data/automataData';
 import { CDMX_LINES, getStationVisualSpec } from './data/cdmxLinesData';
 import { REGEX_LIBRARY, RegexPatternId } from './data/regexLibraryData';
+import {
+  DEFAULT_EXERCISE_BUNDLE,
+  PRESET_EXERCISES,
+  solveAutomatonMethod,
+  SolvedMethodBundle,
+  stepNfaStates,
+} from './engine/automataMethodEngine';
 import { CdmxStationGlyphSvg } from './components/CdmxStationGlyphSvg';
 import { NotebookTab, StudyNotebookModal } from './components/StudyNotebookModal';
 import { metroAudio } from './utils/metroAudio';
@@ -29,17 +36,18 @@ type MissionId = 1 | 2 | 3 | 4;
 type ExplanationLevel = 'simple' | 'exam';
 
 interface ArrowDemoStep {
-  row: NfaState;
-  ticket: 'a' | 'b';
+  row: string;
+  ticket: string;
   box1: string;
   box2: string;
   box3: string;
   box4: string;
+  highlightList: string[];
   whySimple: string;
   whyExam: string;
 }
 
-const ARROW_FAST_STEPS: ArrowDemoStep[] = [
+const DEFAULT_ARROW_FAST_STEPS: ArrowDemoStep[] = [
   {
     row: 'B',
     ticket: 'b',
@@ -47,6 +55,7 @@ const ARROW_FAST_STEPS: ArrowDemoStep[] = [
     box2: '{B}',
     box3: '{C}',
     box4: '{C,D,F}',
+    highlightList: ['C', 'D', 'F'],
     whySimple: 'En B tomas tren "b" a C, y apenas bajas caminas gratis por los puentes ε hacia D y F.',
     whyExam: 'ε-C(B)={B} → δ({B}, b)={C} → ε-C({C})={C,D,F}. Por eso AFN(B, b) = C,D,F.',
   },
@@ -57,6 +66,7 @@ const ARROW_FAST_STEPS: ArrowDemoStep[] = [
     box2: '{C,D,F}',
     box3: '{E}',
     box4: '{E,D,F}',
+    highlightList: ['E', 'D', 'F'],
     whySimple: 'Desde C caminas gratis a {C,D,F}. Solo D tiene tren "a" (lleva a E), y en E caminas gratis a D y F.',
     whyExam: 'ε-C(C)={C,D,F} → δ({C,D,F}, a)=δ(D,a)={E} → ε-C({E})={E,D,F}.',
   },
@@ -67,12 +77,13 @@ const ARROW_FAST_STEPS: ArrowDemoStep[] = [
     box2: '{E,D,F}',
     box3: '{E}',
     box4: '{E,D,F}',
+    highlightList: ['E', 'D', 'F'],
     whySimple: 'Por eso el bucle a* funciona: desde E regresas gratis a D, tomas otra "a" a E, y siempre puedes salir a F.',
     whyExam: 'ε-C(E)={E,D,F} → δ({E,D,F}, a)={E} → ε-C({E})={E,D,F}. Bucle cerrado sobre {E,D,F}.',
   },
 ];
 
-const MISSION4_CHALLENGES = [
+const DEFAULT_MISSION4_CHALLENGES = [
   {
     id: 'c1',
     targetString: 'ab',
@@ -93,31 +104,6 @@ const MISSION4_CHALLENGES = [
   },
 ];
 
-function computeNfaStep(current: NfaState[], ch: SymbolInput): NfaState[] {
-  const moved = new Set<NfaState>();
-  for (const st of current) {
-    if (st === 'A' && ch === 'a') moved.add('B');
-    else if (st === 'B' && ch === 'b') moved.add('C');
-    else if (st === 'D' && ch === 'a') moved.add('E');
-  }
-  const closure = new Set<NfaState>(moved);
-  const q = Array.from(moved);
-  while (q.length > 0) {
-    const curr = q.shift()!;
-    if (curr === 'C' || curr === 'E') {
-      if (!closure.has('D')) {
-        closure.add('D');
-        q.push('D');
-      }
-      if (!closure.has('F')) {
-        closure.add('F');
-        q.push('F');
-      }
-    }
-  }
-  return Array.from(closure);
-}
-
 export default function App() {
   const [gameState, setGameState] = useState<GameState>('TITLE_MENU');
   const [mission, setMission] = useState<MissionId>(1);
@@ -126,8 +112,13 @@ export default function App() {
   const [muted, setMuted] = useState(false);
   const [notebookOpen, setNotebookOpen] = useState<NotebookTab | null>(null);
 
+  // Active Solved Automaton Exercise (default: Exercise A2 (ab)a*)
+  const [activeBundle, setActiveBundle] = useState<SolvedMethodBundle>(DEFAULT_EXERCISE_BUNDLE);
+
   // Mission 1: AFN-ε interactive driving
-  const [nfaStates, setNfaStates] = useState<NfaState[]>(['A']);
+  const [nfaStates, setNfaStates] = useState<string[]>(() =>
+    DEFAULT_EXERCISE_BUNDLE.stations[DEFAULT_EXERCISE_BUNDLE.spec.startState]?.epsilonClosure ?? ['A']
+  );
   const [nfaTickets, setNfaTickets] = useState<string>('');
   const [m1Done, setM1Done] = useState(false);
 
@@ -142,7 +133,7 @@ export default function App() {
   const [m3Done, setM3Done] = useState(false);
 
   // Mission 4: AFD Dispatch game
-  const [dfaState, setDfaState] = useState<DfaStateId>('[A]');
+  const [dfaState, setDfaState] = useState<string>(DEFAULT_EXERCISE_BUNDLE.dfaStartId);
   const [dfaTickets, setDfaTickets] = useState<string>('');
   const [m4ChallengeIdx, setM4ChallengeIdx] = useState(0);
   const [solvedM4Ids, setSolvedM4Ids] = useState<Set<string>>(() => new Set());
@@ -154,11 +145,88 @@ export default function App() {
     'Paga boleto "a" y luego "b" para ver en 3D por qué Tacubaya (C) te clona en 3 andenes.'
   );
 
+  // Dynamic Mission 3 arrow steps & Mission 4 challenges for activeBundle
+  const arrowFastSteps = useMemo<ArrowDemoStep[]>(() => {
+    if (activeBundle.spec.id === 'a2-ab-astar') return DEFAULT_ARROW_FAST_STEPS;
+    const picked: ArrowDemoStep[] = [];
+    for (const row of activeBundle.stage2Rows) {
+      for (const sym of activeBundle.spec.alphabet) {
+        const cell = row.bySymbol[sym];
+        if (cell.closureList.length > 0 && picked.length < 4) {
+          picked.push({
+            row: row.state,
+            ticket: sym,
+            box1: row.state,
+            box2: row.epsilonC,
+            box3: cell.delta,
+            box4: cell.closure,
+            highlightList: cell.closureList,
+            whySimple: cell.why,
+            whyExam: cell.whyExam,
+          });
+        }
+      }
+    }
+    if (picked.length === 0 && activeBundle.stage2Rows[0]) {
+      const r0 = activeBundle.stage2Rows[0];
+      const sym0 = activeBundle.spec.alphabet[0] ?? 'a';
+      const c0 = r0.bySymbol[sym0];
+      picked.push({
+        row: r0.state,
+        ticket: sym0,
+        box1: r0.state,
+        box2: r0.epsilonC,
+        box3: c0?.delta ?? '∅',
+        box4: c0?.closure ?? '∅',
+        highlightList: c0?.closureList ?? [],
+        whySimple: c0?.why ?? 'Sin transiciones disponibles.',
+        whyExam: c0?.whyExam ?? 'δ = ∅',
+      });
+    }
+    return picked;
+  }, [activeBundle]);
+
+  const mission4Challenges = useMemo(() => {
+    if (activeBundle.spec.id === 'a2-ab-astar') return DEFAULT_MISSION4_CHALLENGES;
+    const valids = activeBundle.testCases.filter((t) => t.expectedValid && t.text.length > 0).slice(0, 2);
+    const invalids = activeBundle.testCases.filter((t) => !t.expectedValid && t.text.length > 0).slice(0, 1);
+    const combined = [...valids, ...invalids];
+    if (combined.length === 0) {
+      return DEFAULT_MISSION4_CHALLENGES;
+    }
+    return combined.map((tc, idx) => ({
+      id: `dyn-${idx}`,
+      targetString: tc.text,
+      goalText: tc.expectedValid
+        ? `Lleva el tren a salida verde (EF=1) pagando: ${tc.text.split('').join(' → ')}`
+        : `Comprueba por qué "${tc.text}" se rechaza pagando: ${tc.text.split('').join(' → ')}`,
+      expectedValid: tc.expectedValid,
+    }));
+  }, [activeBundle]);
+
+  const handleSelectBundle = useCallback((nextBundle: SolvedMethodBundle) => {
+    const startClosure =
+      nextBundle.stations[nextBundle.spec.startState]?.epsilonClosure ?? [nextBundle.spec.startState];
+    setActiveBundle(nextBundle);
+    setNfaStates(startClosure);
+    setNfaTickets('');
+    setDfaState(nextBundle.dfaStartId);
+    setDfaTickets('');
+    setArrowIdx(0);
+    setSeenArrows(new Set([0]));
+    setM4ChallengeIdx(0);
+    setSolvedM4Ids(new Set());
+    setFocusStationId(null);
+    setLiveHint(
+      `Ejercicio activo: ${nextBundle.spec.title} (${nextBundle.spec.regex ?? 'Grafo manual'}). Explora en 3D o usa el Cuaderno de Campo.`
+    );
+  }, []);
+
   // Compute Mastery Percentage (0% -> 100%)
   const masteryPercent = useMemo(() => {
     let pct = 0;
     if (m1Done) pct += 25;
-    else if (nfaStates.includes('B')) pct += 10;
+    else if (nfaTickets.length > 0) pct += 10;
 
     if (m2Done) pct += 25;
     else pct += Math.min(20, (visitedPatterns.size - 1) * 10);
@@ -170,7 +238,7 @@ export default function App() {
     else pct += Math.min(20, solvedM4Ids.size * 8);
 
     return Math.min(100, pct);
-  }, [m1Done, m2Done, m3Done, m4Done, nfaStates, visitedPatterns.size, seenArrows.size, solvedM4Ids.size]);
+  }, [m1Done, m2Done, m3Done, m4Done, nfaTickets.length, visitedPatterns.size, seenArrows.size, solvedM4Ids.size]);
 
   // Trigger Victory when reaching 100% for the first time
   const [victoryShown, setVictoryShown] = useState(false);
@@ -187,87 +255,92 @@ export default function App() {
     mission === 2 ? 'library' : mission === 4 ? 'dfa' : 'nfa';
 
   // Active NFA highlight states for Mission 1 or Mission 3
-  const effectiveNfaStates = useMemo<NfaState[]>(() => {
+  const effectiveNfaStates = useMemo<string[]>(() => {
     if (mission === 3) {
-      const step = ARROW_FAST_STEPS[arrowIdx];
-      const rowData = IMAGE2_TABLE.find((r) => r.state === step.row)!;
-      const list = (step.ticket === 'a' ? rowData.epsilonCA : rowData.epsilonCB)
-        .split(',')
-        .filter((s): s is NfaState => s in NFA_STATIONS);
-      return list.length > 0 ? list : [step.row];
+      const step = arrowFastSteps[arrowIdx % arrowFastSteps.length];
+      if (!step) return nfaStates;
+      return step.highlightList.length > 0 ? step.highlightList : [step.row];
     }
     return nfaStates;
-  }, [mission, arrowIdx, nfaStates]);
+  }, [mission, arrowFastSteps, arrowIdx, nfaStates]);
 
-  const switchMission = useCallback((nextM: MissionId) => {
-    setMission(nextM);
-    setFocusStationId(null);
-    metroAudio.playTicketClick();
+  const switchMission = useCallback(
+    (nextM: MissionId) => {
+      setMission(nextM);
+      setFocusStationId(null);
+      metroAudio.playTicketClick();
 
-    if (nextM === 1) {
-      setLiveHint('Misión 1: Paga "a" y "b" para descubrir la clonación en los puentes azules (ε).');
-    } else if (nextM === 2) {
-      setLiveHint('Misión 2: Toca 3 expresiones (ej. a*, a+, a|b) y mira cómo cambia el puente azul en 3D.');
-    } else if (nextM === 3) {
-      setLiveHint('Misión 3: Sigue las 3 flechas para ver cómo nacen {C,D,F} y {E,D,F} sin magia.');
-    } else {
-      setDfaState('[A]');
-      setDfaTickets('');
-      setLiveHint(`Misión 4: ${MISSION4_CHALLENGES[0].goalText}`);
-    }
-  }, []);
+      if (nextM === 1) {
+        setLiveHint(
+          `Misión 1 (${activeBundle.spec.title}): Paga boletos para ver en 3D cómo caminan o se clonan los andenes.`
+        );
+      } else if (nextM === 2) {
+        setLiveHint('Misión 2: Toca 3 expresiones (ej. a*, a+, a|b) y mira cómo cambia el puente azul en 3D.');
+      } else if (nextM === 3) {
+        setLiveHint('Misión 3: Sigue las flechas de la Lámina 2 para ver cómo nacen los Súper-Estados.');
+      } else {
+        setDfaState(activeBundle.dfaStartId);
+        setDfaTickets('');
+        setLiveHint(`Misión 4: ${mission4Challenges[0]?.goalText ?? 'Explora el AFD en 3D.'}`);
+      }
+    },
+    [activeBundle, mission4Challenges]
+  );
 
   const handleNfaTicket = useCallback(
-    (ch: SymbolInput) => {
-      const next = computeNfaStep(nfaStates, ch);
-      setNfaTickets((prev) => (prev + ch).slice(-10));
+    (ch: string) => {
+      const next = stepNfaStates(activeBundle, nfaStates, ch);
+      setNfaTickets((prev) => (prev + ch).slice(-12));
       setNfaStates(next);
 
       if (next.length === 0) {
         metroAudio.playDeadEndBuzz();
         setLiveHint(
           expLevel === 'simple'
-            ? `Con "${ch}" aquí no hay trenes (∅). Pulsa Reiniciar para volver a Pantitlán (A).`
-            : `δ(${nfaStates.join(',')}, ${ch}) = ∅. El autómata se detiene por falta de transición.`
+            ? `Con "${ch}" aquí no hay trenes (∅). Pulsa Reiniciar para volver al inicio (${activeBundle.spec.startState}).`
+            : `δ({${nfaStates.join(',')}}, ${ch}) = ∅. Sin transición válida.`
         );
       } else if (next.length > 1) {
         metroAudio.playTransferChime();
-        if (!m1Done) {
-          setM1Done(true);
-        }
+        if (!m1Done) setM1Done(true);
         setLiveHint(
           expLevel === 'simple'
-            ? `¡Clonado en {${next.join(', ')}}! Por los puentes gratis ε estás en 3 andenes a la vez (+25% Dominio).`
-            : `ε-C(δ({${nfaStates.join(',')}}, ${ch})) = {${next.join(', ')}}. No-determinismo activo (+25% Dominio).`
+            ? `¡Clonado en {${next.join(', ')}}! Por los puentes gratis ε estás en ${next.length} andenes a la vez.`
+            : `ε-C(δ({${nfaStates.join(',')}}, ${ch})) = {${next.join(', ')}}. No-determinismo activo.`
         );
       } else {
         metroAudio.playTicketClick();
+        const reachesAccept = activeBundle.spec.acceptStates.includes(next[0]);
+        if (reachesAccept && !m1Done) setM1Done(true);
+        const stName = activeBundle.stations[next[0]]?.metroName ?? next[0];
         setLiveHint(
           expLevel === 'simple'
-            ? `Pagaste "${ch}" y avanzaste al andén ${next[0]} (${NFA_STATIONS[next[0]].metroName}).`
-            : `δ(${nfaStates.join(',')}, ${ch}) = {${next[0]}}, ε-C(${next[0]}) = {${next[0]}}.`
+            ? `Pagaste "${ch}" y avanzaste al andén ${next[0]} (${stName}).`
+            : `δ({${nfaStates.join(',')}}, ${ch}) = {${next[0]}}, ε-C(${next[0]}) = {${next[0]}}.`
         );
       }
     },
-    [nfaStates, m1Done, expLevel]
+    [activeBundle, nfaStates, m1Done, expLevel]
   );
 
   const handleDfaTicket = useCallback(
-    (ch: SymbolInput) => {
-      const meta = DFA_STATIONS[dfaState];
-      const next = ch === 'a' ? meta.onA : meta.onB;
+    (ch: string) => {
+      const row = activeBundle.dfaRows[dfaState];
+      if (!row) return;
+      const next = row.transitions[ch] ?? '[∅]';
       const updatedTickets = dfaTickets + ch;
       setDfaState(next);
       setDfaTickets(updatedTickets);
 
-      if (next === '[∅]') {
+      const nextRow = activeBundle.dfaRows[next];
+      if (next === '[∅]' || nextRow?.isDeadEnd) {
         metroAudio.playDeadEndBuzz();
         setLiveHint(
           expLevel === 'simple'
             ? `Boleto "${ch}" inválido desde ${dfaState}: el desvío te atrapó en Vía Muerta [∅].`
             : `δ_AFD(${dfaState}, ${ch}) = [∅] (Estado sumidero / pozo, EF = ∅).`
         );
-      } else if (DFA_STATIONS[next].ef === '1') {
+      } else if (nextRow?.ef === '1') {
         metroAudio.playValidExitChime();
         setLiveHint(
           expLevel === 'simple'
@@ -284,39 +357,41 @@ export default function App() {
       }
 
       // Check active challenge completion
-      const challenge = MISSION4_CHALLENGES[m4ChallengeIdx];
+      const challenge = mission4Challenges[m4ChallengeIdx];
       if (challenge && updatedTickets === challenge.targetString) {
         const nextSolved = new Set(solvedM4Ids);
         nextSolved.add(challenge.id);
         setSolvedM4Ids(nextSolved);
-        if (nextSolved.size >= MISSION4_CHALLENGES.length) {
+        if (nextSolved.size >= mission4Challenges.length) {
           setM4Done(true);
-        } else if (m4ChallengeIdx < MISSION4_CHALLENGES.length - 1) {
+        } else if (m4ChallengeIdx < mission4Challenges.length - 1) {
           window.setTimeout(() => {
             const nextIdx = m4ChallengeIdx + 1;
             setM4ChallengeIdx(nextIdx);
-            setDfaState('[A]');
+            setDfaState(activeBundle.dfaStartId);
             setDfaTickets('');
-            setLiveHint(`¡Reto logrado! Siguiente: ${MISSION4_CHALLENGES[nextIdx].goalText}`);
+            setLiveHint(`¡Reto logrado! Siguiente: ${mission4Challenges[nextIdx].goalText}`);
           }, 1100);
         }
       }
     },
-    [dfaState, dfaTickets, m4ChallengeIdx, solvedM4Ids, expLevel]
+    [activeBundle, dfaState, dfaTickets, mission4Challenges, m4ChallengeIdx, solvedM4Ids, expLevel]
   );
 
   const resetTrain = useCallback(() => {
     metroAudio.playTicketClick();
     if (mission === 4) {
-      setDfaState('[A]');
+      setDfaState(activeBundle.dfaStartId);
       setDfaTickets('');
-      setLiveHint(MISSION4_CHALLENGES[m4ChallengeIdx]?.goalText || 'Tren en [A] (Inicio).');
+      setLiveHint(mission4Challenges[m4ChallengeIdx]?.goalText || `Tren en ${activeBundle.dfaStartId} (Inicio).`);
     } else {
-      setNfaStates(['A']);
+      const startClosure =
+        activeBundle.stations[activeBundle.spec.startState]?.epsilonClosure ?? [activeBundle.spec.startState];
+      setNfaStates(startClosure);
       setNfaTickets('');
-      setLiveHint('Tren de vuelta en Pantitlán (A). Paga "a" y luego "b".');
+      setLiveHint(`Tren de vuelta en Inicio (${activeBundle.spec.startState}).`);
     }
-  }, [mission, m4ChallengeIdx]);
+  }, [mission, activeBundle, mission4Challenges, m4ChallengeIdx]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -352,30 +427,30 @@ export default function App() {
         setDockCollapsed((c) => !c);
       } else if (k === 'r') {
         resetTrain();
-      } else if (k === 'a') {
-        if (mission === 1) handleNfaTicket('a');
-        else if (mission === 4) handleDfaTicket('a');
-      } else if (k === 'b') {
-        if (mission === 1) handleNfaTicket('b');
-        else if (mission === 4) handleDfaTicket('b');
+      } else if (activeBundle.spec.alphabet.includes(k)) {
+        if (mission === 1) handleNfaTicket(k);
+        else if (mission === 4) handleDfaTicket(k);
       }
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [gameState, notebookOpen, focusStationId, mission, handleNfaTicket, handleDfaTicket, resetTrain]);
+  }, [gameState, notebookOpen, focusStationId, mission, activeBundle.spec.alphabet, handleNfaTicket, handleDfaTicket, resetTrain]);
 
-  const handleStationClick = useCallback((stId: string) => {
-    setFocusStationId(stId);
-    metroAudio.playTicketClick();
-    if (stId in NFA_STATIONS) {
-      const meta = NFA_STATIONS[stId as NfaState];
-      setLiveHint(`${meta.id} (${meta.metroName}): ${meta.closureReason}`);
-    } else if (stId in DFA_STATIONS) {
-      const meta = DFA_STATIONS[stId as DfaStateId];
-      setLiveHint(`${meta.id}: ${meta.whyExists}`);
-    }
-  }, []);
+  const handleStationClick = useCallback(
+    (stId: string) => {
+      setFocusStationId(stId);
+      metroAudio.playTicketClick();
+      const nfaInfo = activeBundle.stations[stId];
+      const dfaInfo = activeBundle.dfaRows[stId];
+      if (nfaInfo) {
+        setLiveHint(`${nfaInfo.id} (${nfaInfo.metroName}): ${nfaInfo.closureReason}`);
+      } else if (dfaInfo) {
+        setLiveHint(`${dfaInfo.id}: ${dfaInfo.whyExists}`);
+      }
+    },
+    [activeBundle]
+  );
 
   const selectLibraryPattern = (id: RegexPatternId) => {
     setLibPatternId(id);
@@ -391,19 +466,19 @@ export default function App() {
   };
 
   const advanceArrowStep = (nextIdx: number) => {
-    setArrowIdx(nextIdx);
+    const safeIdx = arrowFastSteps.length > 0 ? nextIdx % arrowFastSteps.length : 0;
+    setArrowIdx(safeIdx);
     const nextSeen = new Set(seenArrows);
-    nextSeen.add(nextIdx);
+    nextSeen.add(safeIdx);
     setSeenArrows(nextSeen);
-    if (nextSeen.size >= ARROW_FAST_STEPS.length) {
+    if (nextSeen.size >= arrowFastSteps.length) {
       setM3Done(true);
     }
     metroAudio.playTransferChime();
-    setLiveHint(
-      expLevel === 'simple'
-        ? ARROW_FAST_STEPS[nextIdx].whySimple
-        : ARROW_FAST_STEPS[nextIdx].whyExam
-    );
+    const step = arrowFastSteps[safeIdx];
+    if (step) {
+      setLiveHint(expLevel === 'simple' ? step.whySimple : step.whyExam);
+    }
   };
 
   const handleUnlockProgress = useCallback((key: 'm1' | 'm2' | 'm3' | 'm4' | 'all') => {
@@ -424,15 +499,23 @@ export default function App() {
   const coachAction = useMemo<{ text: string; run: () => void }>(() => {
     if (mission === 1) {
       if (nfaStates.length === 0) {
-        return { text: 'Paso sugerido: Toca aquí para Reiniciar en Pantitlán (A)', run: resetTrain };
+        return { text: `Paso sugerido: Toca aquí para Reiniciar en ${activeBundle.spec.startState}`, run: resetTrain };
       }
-      if (nfaStates.length === 1 && nfaStates[0] === 'A') {
-        return { text: 'Paso 1/2: Toca aquí o pulsa Boleto [a] para viajar de A → B', run: () => handleNfaTicket('a') };
+      if (activeBundle.spec.id === 'a2-ab-astar') {
+        if (nfaStates.length === 1 && nfaStates[0] === 'A') {
+          return { text: 'Paso 1/2: Toca aquí o pulsa Boleto [a] para viajar de A → B', run: () => handleNfaTicket('a') };
+        }
+        if (nfaStates.length === 1 && nfaStates[0] === 'B') {
+          return { text: 'Paso 2/2: Toca aquí o pulsa Boleto [b] para llegar a C y clonarte en {C,D,F}', run: () => handleNfaTicket('b') };
+        }
+      } else if (!m1Done) {
+        const ch0 = mission4Challenges[0]?.targetString[nfaTickets.length] ?? activeBundle.spec.alphabet[0] ?? 'a';
+        return {
+          text: `Paso sugerido: Prueba pagar boleto [${ch0}] para explorar transiciones`,
+          run: () => handleNfaTicket(ch0),
+        };
       }
-      if (nfaStates.length === 1 && nfaStates[0] === 'B') {
-        return { text: 'Paso 2/2: Toca aquí o pulsa Boleto [b] para llegar a C y clonarte en {C,D,F}', run: () => handleNfaTicket('b') };
-      }
-      return { text: '¡Misión 1 lista! Toca aquí para probar otra "a" en el bucle o ir a Misión 2', run: () => switchMission(2) };
+      return { text: '¡Misión 1 lista! Toca aquí para ir a Misión 2', run: () => switchMission(2) };
     }
     if (mission === 2) {
       const nextUnvisited = REGEX_LIBRARY.find((p) => !visitedPatterns.has(p.id));
@@ -447,22 +530,22 @@ export default function App() {
     if (mission === 3) {
       if (!m3Done) {
         return {
-          text: `Paso sugerido: Ver siguiente ejemplo de flechas (${seenArrows.size}/${ARROW_FAST_STEPS.length})`,
-          run: () => advanceArrowStep((arrowIdx + 1) % ARROW_FAST_STEPS.length),
+          text: `Paso sugerido: Ver siguiente ejemplo de flechas (${seenArrows.size}/${arrowFastSteps.length})`,
+          run: () => advanceArrowStep((arrowIdx + 1) % arrowFastSteps.length),
         };
       }
       return { text: '¡Misión 3 lista! Toca aquí para ir a Misión 4 (Juego AFD)', run: () => switchMission(4) };
     }
     // Mission 4
-    const ch = MISSION4_CHALLENGES[m4ChallengeIdx];
+    const ch = mission4Challenges[m4ChallengeIdx];
     if (ch) {
       if (!ch.targetString.startsWith(dfaTickets)) {
-        return { text: 'Te desviaste del reto: toca aquí para Reiniciar en [A]', run: resetTrain };
+        return { text: `Te desviaste del reto: toca aquí para Reiniciar en ${activeBundle.dfaStartId}`, run: resetTrain };
       }
-      const nextChar = ch.targetString[dfaTickets.length] as SymbolInput | undefined;
+      const nextChar = ch.targetString[dfaTickets.length];
       if (nextChar) {
         return {
-          text: `Reto ${m4ChallengeIdx + 1}/3 ("${ch.targetString}"): Toca aquí para enviar boleto "${nextChar}"`,
+          text: `Reto ${m4ChallengeIdx + 1}/${mission4Challenges.length} ("${ch.targetString}"): Toca aquí para enviar boleto "${nextChar}"`,
           run: () => handleDfaTicket(nextChar),
         };
       }
@@ -470,12 +553,17 @@ export default function App() {
     return { text: '¡Dominio completo! Abre la Guía Master 99% para certificarte', run: () => setNotebookOpen('master') };
   }, [
     mission,
+    activeBundle,
     nfaStates,
+    nfaTickets.length,
+    m1Done,
     visitedPatterns,
     m2Done,
     m3Done,
     seenArrows.size,
     arrowIdx,
+    arrowFastSteps.length,
+    mission4Challenges,
     m4ChallengeIdx,
     dfaTickets,
     resetTrain,
@@ -484,17 +572,21 @@ export default function App() {
     switchMission,
   ]);
 
-  const activeArrow = ARROW_FAST_STEPS[arrowIdx];
+  const activeArrow = arrowFastSteps[arrowIdx % Math.max(1, arrowFastSteps.length)];
   const activeLib = REGEX_LIBRARY.find((p) => p.id === libPatternId)!;
 
   // Resolve inspected station details when focusStationId is active
   const inspectedNfaRow = useMemo(
-    () => (focusStationId ? IMAGE2_TABLE.find((r) => r.state === focusStationId) : undefined),
-    [focusStationId]
+    () => (focusStationId ? activeBundle.stage2Rows.find((r) => r.state === focusStationId) : undefined),
+    [focusStationId, activeBundle]
+  );
+  const inspectedNfaStation = useMemo(
+    () => (focusStationId ? activeBundle.stations[focusStationId] : undefined),
+    [focusStationId, activeBundle]
   );
   const inspectedDfaMeta = useMemo(
-    () => (focusStationId && focusStationId in DFA_STATIONS ? DFA_STATIONS[focusStationId as DfaStateId] : undefined),
-    [focusStationId]
+    () => (focusStationId ? activeBundle.dfaRows[focusStationId] : undefined),
+    [focusStationId, activeBundle]
   );
 
   return (
@@ -505,6 +597,7 @@ export default function App() {
         activeNfaStates={effectiveNfaStates}
         activeDfaState={dfaState}
         libraryPatternId={libPatternId}
+        bundle={activeBundle}
         focusStationId={focusStationId}
         isTitleScreen={gameState === 'TITLE_MENU'}
         onStationClick={handleStationClick}
@@ -576,6 +669,18 @@ export default function App() {
               <button
                 onClick={() => {
                   setGameState('PLAYING');
+                  setNotebookOpen('lab');
+                  metroAudio.playTicketClick();
+                }}
+                className="inline-flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold bg-sky-700 text-white hover:bg-sky-600 transition-colors cursor-pointer"
+              >
+                <Sliders className="w-4 h-4" />
+                <span>Crear / Elegir ER o AFN-ε</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setGameState('PLAYING');
                   setNotebookOpen('table');
                   metroAudio.playTicketClick();
                 }}
@@ -602,6 +707,42 @@ export default function App() {
               className="rounded-xl px-4 py-3 border border-slate-700/80 shadow-lg space-y-2"
               style={{ backgroundColor: 'rgba(15, 23, 42, 0.92)' }}
             >
+              <div className="flex items-center justify-between gap-2 pb-1 border-b border-slate-800">
+                <select
+                  value={
+                    PRESET_EXERCISES.some((p) => p.id === activeBundle.spec.id)
+                      ? activeBundle.spec.id
+                      : ''
+                  }
+                  onChange={(e) => {
+                    const p = PRESET_EXERCISES.find((x) => x.id === e.target.value);
+                    if (p) {
+                      handleSelectBundle(
+                        p.id === 'a2-ab-astar' ? DEFAULT_EXERCISE_BUNDLE : solveAutomatonMethod(p)
+                      );
+                    }
+                  }}
+                  aria-label="Cambiar ejercicio activo"
+                  className="bg-slate-800 border border-slate-700 text-slate-100 text-[11px] font-semibold rounded-md px-2 py-1 flex-1 min-w-0 truncate"
+                >
+                  {!PRESET_EXERCISES.some((p) => p.id === activeBundle.spec.id) && (
+                    <option value="">{activeBundle.spec.title}</option>
+                  )}
+                  {PRESET_EXERCISES.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.title}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setNotebookOpen('lab')}
+                  className="px-2 py-1 rounded-md text-[10px] font-bold bg-sky-700 text-white hover:bg-sky-600 shrink-0"
+                  title="Crear cualquier ER o editar grafo AFN-ε"
+                >
+                  + ER
+                </button>
+              </div>
+
               <div className="flex items-center justify-between gap-4">
                 <span className="text-xs font-semibold text-orange-300">
                   Misión {mission} de 4
@@ -638,7 +779,7 @@ export default function App() {
                 const activeKey =
                   mission === 4
                     ? dfaState
-                    : effectiveNfaStates[0] ?? 'A';
+                    : effectiveNfaStates[0] ?? activeBundle.spec.startState;
                 const spec = getStationVisualSpec(activeKey);
                 return (
                   <div className="pt-1.5 border-t border-slate-800/90 flex items-center justify-between gap-2">
@@ -702,6 +843,17 @@ export default function App() {
 
           {/* Top-Right Quick Actions */}
           <div className="fixed top-4 right-4 z-10 flex flex-wrap items-center justify-end gap-2">
+            <button
+              onClick={() => {
+                setNotebookOpen('lab');
+                metroAudio.playTicketClick();
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold text-white bg-sky-700 hover:bg-sky-600 border border-sky-400/40 shadow-md transition-colors whitespace-nowrap cursor-pointer"
+            >
+              <Sliders className="w-3.5 h-3.5" />
+              <span>Constructor ER / AFN-ε</span>
+            </button>
+
             <button
               onClick={() => {
                 setNotebookOpen('zero');
@@ -824,26 +976,24 @@ export default function App() {
                 );
               })()}
 
-              {inspectedNfaRow && (
+              {inspectedNfaRow && inspectedNfaStation && (
                 <div className="space-y-2 text-xs">
-                  <div className="grid grid-cols-3 gap-1.5 text-center font-mono">
-                    <div className="bg-slate-800/90 rounded-lg p-2 border border-slate-700">
+                  <div className="flex flex-wrap gap-1.5 text-center font-mono">
+                    <div className="bg-slate-800/90 rounded-lg p-2 border border-slate-700 flex-1 min-w-[80px]">
                       <div className="text-[10px] text-sky-300 font-sans">1. ε-Cerradura</div>
-                      <div className="font-bold text-white mt-0.5">{`{${inspectedNfaRow.epsilonC}}`}</div>
+                      <div className="font-bold text-white mt-0.5">{inspectedNfaRow.epsilonC}</div>
                     </div>
-                    <div className="bg-slate-800/90 rounded-lg p-2 border border-slate-700">
-                      <div className="text-[10px] text-orange-300 font-sans">Con boleto "a"</div>
-                      <div className="font-bold text-white mt-0.5">{inspectedNfaRow.afnA}</div>
-                    </div>
-                    <div className="bg-slate-800/90 rounded-lg p-2 border border-slate-700">
-                      <div className="text-[10px] text-orange-300 font-sans">Con boleto "b"</div>
-                      <div className="font-bold text-white mt-0.5">{inspectedNfaRow.afnB}</div>
-                    </div>
+                    {activeBundle.spec.alphabet.map((sym) => (
+                      <div key={sym} className="bg-slate-800/90 rounded-lg p-2 border border-slate-700 flex-1 min-w-[70px]">
+                        <div className="text-[10px] text-orange-300 font-sans">Con "{sym}"</div>
+                        <div className="font-bold text-white mt-0.5">{inspectedNfaRow.bySymbol[sym]?.closure ?? '∅'}</div>
+                      </div>
+                    ))}
                   </div>
 
                   <p className="text-slate-200 leading-relaxed">
                     <strong className="text-sky-300">¿Por qué?</strong>{' '}
-                    {NFA_STATIONS[inspectedNfaRow.state].closureReason}
+                    {inspectedNfaStation.closureReason}
                   </p>
                   <div className="rounded-lg bg-slate-800/80 border border-slate-700 px-3 py-2 text-[11px] text-emerald-300">
                     <strong>Estado Final (EF):</strong> {inspectedNfaRow.efNew === '1' ? '1 (Salida válida)' : '∅ (No es salida)'} — {inspectedNfaRow.whyEF}
@@ -853,16 +1003,14 @@ export default function App() {
 
               {inspectedDfaMeta && (
                 <div className="space-y-2 text-xs">
-                  <div className="grid grid-cols-3 gap-1.5 text-center font-mono">
-                    <div className="bg-slate-800/90 rounded-lg p-2 border border-slate-700">
-                      <div className="text-[10px] text-orange-300 font-sans">Con "a" va a</div>
-                      <div className="font-bold text-white mt-0.5">{inspectedDfaMeta.onA}</div>
-                    </div>
-                    <div className="bg-slate-800/90 rounded-lg p-2 border border-slate-700">
-                      <div className="text-[10px] text-orange-300 font-sans">Con "b" va a</div>
-                      <div className="font-bold text-white mt-0.5">{inspectedDfaMeta.onB}</div>
-                    </div>
-                    <div className="bg-slate-800/90 rounded-lg p-2 border border-slate-700">
+                  <div className="flex flex-wrap gap-1.5 text-center font-mono">
+                    {activeBundle.spec.alphabet.map((sym) => (
+                      <div key={sym} className="bg-slate-800/90 rounded-lg p-2 border border-slate-700 flex-1 min-w-[70px]">
+                        <div className="text-[10px] text-orange-300 font-sans">Con "{sym}" va a</div>
+                        <div className="font-bold text-white mt-0.5">{inspectedDfaMeta.transitions[sym]}</div>
+                      </div>
+                    ))}
+                    <div className="bg-slate-800/90 rounded-lg p-2 border border-slate-700 flex-1 min-w-[65px]">
                       <div className="text-[10px] text-emerald-300 font-sans">Salida EF</div>
                       <div className="font-bold text-white mt-0.5">{inspectedDfaMeta.ef}</div>
                     </div>
@@ -870,7 +1018,7 @@ export default function App() {
                   <p className="text-slate-200 leading-relaxed">
                     <strong className="text-orange-300">Origen:</strong> {inspectedDfaMeta.whyExists}
                   </p>
-                  <p className="text-slate-300 text-[11px]">{inspectedDfaMeta.hintA}</p>
+                  <p className="text-slate-300 text-[11px]">{inspectedDfaMeta.hintEF}</p>
                 </div>
               )}
             </div>
@@ -953,18 +1101,15 @@ export default function App() {
               {mission === 1 && (
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-0.5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() => handleNfaTicket('a')}
-                      className="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-orange-600 text-white hover:bg-orange-500 transition-colors whitespace-nowrap"
-                    >
-                      Boleto [a]
-                    </button>
-                    <button
-                      onClick={() => handleNfaTicket('b')}
-                      className="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-orange-600 text-white hover:bg-orange-500 transition-colors whitespace-nowrap"
-                    >
-                      Boleto [b]
-                    </button>
+                    {activeBundle.spec.alphabet.map((sym) => (
+                      <button
+                        key={sym}
+                        onClick={() => handleNfaTicket(sym)}
+                        className="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-orange-600 text-white hover:bg-orange-500 transition-colors whitespace-nowrap"
+                      >
+                        Boleto [{sym}]
+                      </button>
+                    ))}
                     <button
                       onClick={resetTrain}
                       className="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium bg-slate-800 text-slate-200 hover:bg-slate-700 whitespace-nowrap"
@@ -978,12 +1123,12 @@ export default function App() {
                   </div>
 
                   {/* Quick station inspector pills */}
-                  <div className="flex items-center gap-1">
-                    {(['A', 'B', 'C', 'D', 'E', 'F'] as NfaState[]).map((st) => (
+                  <div className="flex items-center gap-1 overflow-x-auto max-w-xs sm:max-w-sm">
+                    {activeBundle.spec.states.map((st) => (
                       <button
                         key={st}
                         onClick={() => handleStationClick(st)}
-                        className={`w-7 h-7 rounded-md text-xs font-mono font-bold border transition-colors ${
+                        className={`w-7 h-7 rounded-md text-xs font-mono font-bold border transition-colors shrink-0 ${
                           focusStationId === st
                             ? 'bg-sky-600 text-white border-sky-400'
                             : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
@@ -1037,7 +1182,7 @@ export default function App() {
                 </div>
               )}
 
-              {mission === 3 && (
+              {mission === 3 && activeArrow && (
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-0.5">
                   {/* Inline compact arrow chain */}
                   <div className="flex flex-wrap items-center gap-1.5 text-xs font-mono">
@@ -1060,10 +1205,10 @@ export default function App() {
 
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => advanceArrowStep((arrowIdx + 1) % ARROW_FAST_STEPS.length)}
+                      onClick={() => advanceArrowStep((arrowIdx + 1) % Math.max(1, arrowFastSteps.length))}
                       className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-orange-600 text-white hover:bg-orange-500 whitespace-nowrap"
                     >
-                      Siguiente flecha ({arrowIdx + 1}/{ARROW_FAST_STEPS.length})
+                      Siguiente flecha ({(arrowIdx % Math.max(1, arrowFastSteps.length)) + 1}/{arrowFastSteps.length})
                     </button>
                     <button
                       onClick={() => setNotebookOpen('table')}
@@ -1078,18 +1223,15 @@ export default function App() {
               {mission === 4 && (
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-0.5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() => handleDfaTicket('a')}
-                      className="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-orange-600 text-white hover:bg-orange-500 whitespace-nowrap"
-                    >
-                      Boleto [a]
-                    </button>
-                    <button
-                      onClick={() => handleDfaTicket('b')}
-                      className="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-orange-600 text-white hover:bg-orange-500 whitespace-nowrap"
-                    >
-                      Boleto [b]
-                    </button>
+                    {activeBundle.spec.alphabet.map((sym) => (
+                      <button
+                        key={sym}
+                        onClick={() => handleDfaTicket(sym)}
+                        className="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-orange-600 text-white hover:bg-orange-500 whitespace-nowrap"
+                      >
+                        Boleto [{sym}]
+                      </button>
+                    ))}
                     <button
                       onClick={resetTrain}
                       className="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium bg-slate-800 text-slate-200 hover:bg-slate-700 whitespace-nowrap"
@@ -1098,7 +1240,7 @@ export default function App() {
                       <span>Reiniciar</span>
                     </button>
                     <span className="text-xs font-mono text-slate-300 tabular-nums">
-                      Reto {m4ChallengeIdx + 1}/3 · Tira: <strong className="text-white">{dfaTickets || '—'}</strong>
+                      Reto {m4ChallengeIdx + 1}/{mission4Challenges.length} · Tira: <strong className="text-white">{dfaTickets || '—'}</strong>
                     </span>
                   </div>
 
@@ -1227,6 +1369,8 @@ export default function App() {
       {notebookOpen && (
         <StudyNotebookModal
           initialTab={notebookOpen}
+          activeBundle={activeBundle}
+          onSelectBundle={handleSelectBundle}
           onClose={() => setNotebookOpen(null)}
           onUnlockProgress={handleUnlockProgress}
         />
