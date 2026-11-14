@@ -1,0 +1,168 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 420" width="100%" height="auto">
+  <defs>
+    <pattern id="techGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#1e293b" stroke-width="0.9" />
+    </pattern>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090d16" />
+      <stop offset="50%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <filter id="cardGlow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000000" flood-opacity="0.45" />
+    </filter>
+    <marker id="arrowPinkTech" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#F04E98" />
+    </marker>
+    <marker id="arrowBlueTech" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#005EB8" />
+    </marker>
+    <marker id="arrowEmeraldTech" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#10b981" />
+    </marker>
+    <marker id="arrowOrangeTech" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#FF6B00" />
+    </marker>
+  </defs>
+
+  <!-- Main Dark STC Metro Board -->
+  <rect x="0" y="0" width="1120" height="420" rx="22" fill="url(#bgGrad)" />
+  <rect x="8" y="8" width="1104" height="404" rx="18" fill="url(#techGrid)" stroke="#334155" stroke-width="1.5" />
+
+  <!-- Top STC Metro Signage Header Bar -->
+  <rect x="24" y="22" width="1072" height="48" rx="12" fill="#020617" stroke="#334155" stroke-width="1.2" />
+  <rect x="24" y="22" width="12" height="48" rx="4" fill="#FF6B00" />
+  <circle cx="54" cy="46" r="11" fill="#FF6B00" />
+  <text x="54" y="50" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="11" font-weight="900">M</text>
+  <text x="76" y="43" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="900" letter-spacing="0.06em">ARQUITECTURA Y STACK TECNOLÓGICO · METRO AUTÓMATA CDMX</text>
+  <text x="76" y="59" fill="#94a3b8" font-family="monospace" font-size="11" font-weight="600">React 19 · TypeScript 7 · Three.js WebGL · Tailwind CSS 4 · Express · Google Gemini AI · Motor Universal AFN-ε → AFD</text>
+
+  <!-- Metro Line Connecting Tracks Between Columns -->
+  <!-- Track 1 -> 2 (Line 1 Pink) -->
+  <path d="M 278 165 L 316 165" stroke="#F04E98" stroke-width="5" marker-end="url(#arrowPinkTech)" />
+  <path d="M 278 305 L 316 305" stroke="#005EB8" stroke-width="5" marker-end="url(#arrowBlueTech)" />
+
+  <!-- Track 2 -> 3 (Line 3 Emerald) -->
+  <path d="M 550 165 L 588 165" stroke="#10b981" stroke-width="5" marker-end="url(#arrowEmeraldTech)" />
+  <path d="M 550 305 L 588 305" stroke="#FF6B00" stroke-width="5" marker-end="url(#arrowOrangeTech)" />
+
+  <!-- Track 3 -> 4 (Line Orange) -->
+  <path d="M 822 165 L 860 165" stroke="#FF6B00" stroke-width="5" marker-end="url(#arrowOrangeTech)" />
+  <path d="M 822 305 L 860 305" stroke="#10b981" stroke-width="5" marker-end="url(#arrowEmeraldTech)" />
+
+  <!-- ==================== COLUMN 1: FRONTEND & UI ==================== -->
+  <!-- Card 1A: React 19 + TypeScript 7 -->
+  <g transform="translate(28, 92)" filter="url(#cardGlow)">
+    <rect x="0" y="0" width="248" height="135" rx="14" fill="#0f172a" stroke="#38bdf8" stroke-width="2" />
+    <rect x="0" y="0" width="248" height="9" rx="4" fill="#38bdf8" />
+    <rect x="14" y="20" width="38" height="38" rx="9" fill="#0284c7" />
+    <!-- React Atom Icon -->
+    <ellipse cx="33" cy="39" rx="14" ry="5.5" fill="none" stroke="#ffffff" stroke-width="1.8" transform="rotate(30 33 39)" />
+    <ellipse cx="33" cy="39" rx="14" ry="5.5" fill="none" stroke="#ffffff" stroke-width="1.8" transform="rotate(-30 33 39)" />
+    <circle cx="33" cy="39" r="3" fill="#ffffff" />
+    <text x="62" y="34" fill="#38bdf8" font-family="monospace" font-size="10" font-weight="900">CAPA UI REACTIVA</text>
+    <text x="62" y="51" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="900">React 19 + TS 7.0</text>
+    <text x="14" y="76" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600">• Estado sincronizado 2D ↔ 3D</text>
+    <text x="14" y="95" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600">• Cuaderno interactivo de 8 pestañas</text>
+    <text x="14" y="114" fill="#94a3b8" font-family="monospace" font-size="10.5">App.tsx · StudyNotebookModal.tsx</text>
+  </g>
+
+  <!-- Card 1B: Tailwind CSS 4 + Vite 8 + Motion -->
+  <g transform="translate(28, 242)" filter="url(#cardGlow)">
+    <rect x="0" y="0" width="248" height="135" rx="14" fill="#0f172a" stroke="#F04E98" stroke-width="2" />
+    <rect x="0" y="0" width="248" height="9" rx="4" fill="#F04E98" />
+    <rect x="14" y="20" width="38" height="38" rx="9" fill="#F04E98" />
+    <text x="33" y="44" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="14" font-weight="900">L1</text>
+    <text x="62" y="34" fill="#f472b6" font-family="monospace" font-size="10" font-weight="900">DISEÑO Y BUILD</text>
+    <text x="62" y="51" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="900">Tailwind 4 + Vite 8</text>
+    <text x="14" y="76" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600">• Señalética oficial STC Metro CDMX</text>
+    <text x="14" y="95" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600">• 12 Pictogramas SVG + Audio WebAPI</text>
+    <text x="14" y="114" fill="#94a3b8" font-family="monospace" font-size="10.5">CdmxStationGlyphSvg · metroAudio</text>
+  </g>
+
+  <!-- ==================== COLUMN 2: 3D WEBGL & 2D SVG MAPS ==================== -->
+  <!-- Card 2A: Three.js 3D Engine -->
+  <g transform="translate(300, 92)" filter="url(#cardGlow)">
+    <rect x="0" y="0" width="248" height="135" rx="14" fill="#0f172a" stroke="#FF6B00" stroke-width="2" />
+    <rect x="0" y="0" width="248" height="9" rx="4" fill="#FF6B00" />
+    <rect x="14" y="20" width="38" height="38" rx="9" fill="#FF6B00" />
+    <polygon points="33,25 46,49 20,49" fill="none" stroke="#ffffff" stroke-width="2.2" />
+    <text x="62" y="34" fill="#fb923c" font-family="monospace" font-size="10" font-weight="900">MOTOR GRÁFICO 3D</text>
+    <text x="62" y="51" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="900">Three.js WebGL</text>
+    <text x="14" y="76" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600">• Tren MP-68 naranja con física en vías</text>
+    <text x="14" y="95" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600">• Tótems 3D y texturas procedurales</text>
+    <text x="14" y="114" fill="#94a3b8" font-family="monospace" font-size="10.5">metroModels.ts · proceduralTextures</text>
+  </g>
+
+  <!-- Card 2B: Dynamic 2D SVG Vector Maps -->
+  <g transform="translate(300, 242)" filter="url(#cardGlow)">
+    <rect x="0" y="0" width="248" height="135" rx="14" fill="#0f172a" stroke="#005EB8" stroke-width="2" />
+    <rect x="0" y="0" width="248" height="9" rx="4" fill="#005EB8" />
+    <rect x="14" y="20" width="38" height="38" rx="9" fill="#005EB8" />
+    <text x="33" y="44" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="14" font-weight="900">L2</text>
+    <text x="62" y="34" fill="#60a5fa" font-family="monospace" font-size="10" font-weight="900"> DIAGRAMAS VECTORIALES</text>
+    <text x="62" y="51" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="900">Mapas SVG AFN / AFD</text>
+    <text x="14" y="76" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600">• Curvas Bézier con evasión de nodos</text>
+    <text x="14" y="95" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600">• Íconos compuestos en subconjuntos</text>
+    <text x="14" y="114" fill="#94a3b8" font-family="monospace" font-size="10.5">MetroMapNFA.tsx · MetroMapDFA.tsx</text>
+  </g>
+
+  <!-- ==================== COLUMN 3: UNIVERSAL AUTOMATA ENGINE ==================== -->
+  <!-- Card 3A: Thompson & Subset Construction Engine -->
+  <g transform="translate(572, 92)" filter="url(#cardGlow)">
+    <rect x="0" y="0" width="248" height="135" rx="14" fill="#0f172a" stroke="#10b981" stroke-width="2" />
+    <rect x="0" y="0" width="248" height="9" rx="4" fill="#10b981" />
+    <rect x="14" y="20" width="38" height="38" rx="9" fill="#059669" />
+    <text x="33" y="44" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="15" font-weight="900">ε-C</text>
+    <text x="62" y="34" fill="#34d399" font-family="monospace" font-size="10" font-weight="900">NÚCLEO FORMAL</text>
+    <text x="62" y="51" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="900">Motor de 4 Láminas</text>
+    <text x="14" y="76" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600">• Compilador ER → AFN-ε (Thompson)</text>
+    <text x="14" y="95" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600">• Regla 3 pasos + Subconjuntos BFS</text>
+    <text x="14" y="114" fill="#94a3b8" font-family="monospace" font-size="10.5">automataMethodEngine.ts</text>
+  </g>
+
+  <!-- Card 3B: Hopcroft Minimization & Batch Verifier -->
+  <g transform="translate(572, 242)" filter="url(#cardGlow)">
+    <rect x="0" y="0" width="248" height="135" rx="14" fill="#0f172a" stroke="#eab308" stroke-width="2" />
+    <rect x="0" y="0" width="248" height="9" rx="4" fill="#eab308" />
+    <rect x="14" y="20" width="38" height="38" rx="9" fill="#ca8a04" />
+    <text x="33" y="44" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="13" font-weight="900">AFD</text>
+    <text x="62" y="34" fill="#facc15" font-family="monospace" font-size="10" font-weight="900">VERIFICACIÓN Y ÓPTIMO</text>
+    <text x="62" y="51" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="900">Hopcroft + Pizarra</text>
+    <text x="14" y="76" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600">• Minimización de estados por partición</text>
+    <text x="14" y="95" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600">• Simulador en lote y Quiz dinámico</text>
+    <text x="14" y="114" fill="#94a3b8" font-family="monospace" font-size="10.5">Stage1..4 · MethodWorkbench.tsx</text>
+  </g>
+
+  <!-- ==================== COLUMN 4: BACKEND & AI TUTOR ==================== -->
+  <!-- Card 4A: Express + Google Gemini GenAI SDK -->
+  <g transform="translate(844, 92)" filter="url(#cardGlow)">
+    <rect x="0" y="0" width="248" height="135" rx="14" fill="#0f172a" stroke="#a855f7" stroke-width="2" />
+    <rect x="0" y="0" width="248" height="9" rx="4" fill="#a855f7" />
+    <rect x="14" y="20" width="38" height="38" rx="9" fill="#7e22ce" />
+    <text x="33" y="44" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="14" font-weight="900">AI</text>
+    <text x="62" y="34" fill="#c084fc" font-family="monospace" font-size="10" font-weight="900">BACKEND HÍBRIDO</text>
+    <text x="62" y="51" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="900">Express + Gemini AI</text>
+    <text x="14" y="76" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600">• SDK oficial @google/genai</text>
+    <text x="14" y="95" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600">• Fallback determinista offline 100%</text>
+    <text x="14" y="114" fill="#94a3b8" font-family="monospace" font-size="10.5">server.ts · GeminiMetroLab.tsx</text>
+  </g>
+
+  <!-- Card 4B: Export & Study Deliverables -->
+  <g transform="translate(844, 242)" filter="url(#cardGlow)">
+    <rect x="0" y="0" width="248" height="135" rx="14" fill="#0f172a" stroke="#14b8a6" stroke-width="2" />
+    <rect x="0" y="0" width="248" height="9" rx="4" fill="#14b8a6" />
+    <rect x="14" y="20" width="38" height="38" rx="9" fill="#0d9488" />
+    <text x="33" y="44" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="13" font-weight="900">MD</text>
+    <text x="62" y="34" fill="#2dd4bf" font-family="monospace" font-size="10" font-weight="900">EXPORTACIÓN ACADÉMICA</text>
+    <text x="62" y="51" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="900">Markdown · JSON · PDF</text>
+    <text x="14" y="76" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600">• Reporte completo de las 4 láminas</text>
+    <text x="14" y="95" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600">• 7 ejercicios clásicos + ER libre</text>
+    <text x="14" y="114" fill="#94a3b8" font-family="monospace" font-size="10.5">Exportador directo en navegador</text>
+  </g>
+
+  <!-- Bottom Legend Footer -->
+  <text x="560" y="400" text-anchor="middle" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11" font-weight="700">
+    Flujo de Datos: Expresión Regular / Grafo AFN-ε  ──►  1. ε-C(x) · 2. δ(x,σ) · 3. ε-C  ──►  Subconjuntos BFS [A]..[E,D,F]  ──►  Simulación 3D + 2D
+  </text>
+</svg>

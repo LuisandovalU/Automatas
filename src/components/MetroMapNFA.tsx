@@ -407,7 +407,7 @@ export const MetroMapNFA: React.FC<MetroMapNFAProps> = ({
         <div className="w-full overflow-x-auto">
           <svg
             viewBox="0 0 960 365"
-            className="w-full h-auto min-w-[720px] select-none"
+            className="w-full h-auto select-none"
             role="img"
             aria-label="Diagrama de Red Metro AFN con transiciones épsilon para (ab)a*"
           >
@@ -775,7 +775,7 @@ export const MetroMapNFA: React.FC<MetroMapNFAProps> = ({
       <div className="w-full overflow-x-auto">
         <svg
           viewBox={`0 0 ${width} ${height}`}
-          className="w-full h-auto min-w-[700px] select-none"
+          className="w-full h-auto select-none"
           role="img"
           aria-label={`Diagrama de Red Metro AFN-ε para ${bundle.spec.title}`}
         >

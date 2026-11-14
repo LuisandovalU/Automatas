@@ -373,7 +373,7 @@ export const MetroMapDFA: React.FC<MetroMapDFAProps> = ({
         <div className="w-full overflow-x-auto">
           <svg
             viewBox="0 0 1000 470"
-            className="w-full h-auto min-w-[740px] select-none"
+            className="w-full h-auto select-none"
             role="img"
             aria-label="Diagrama de Estados AFD por Construcción de Subconjuntos para (ab)a*"
           >
@@ -900,7 +900,7 @@ export const MetroMapDFA: React.FC<MetroMapDFAProps> = ({
       <div className="w-full overflow-x-auto">
         <svg
           viewBox={`0 0 ${width} ${height}`}
-          className="w-full h-auto min-w-[720px] select-none"
+          className="w-full h-auto select-none"
           role="img"
           aria-label={`Diagrama de Estados AFD para ${bundle.spec.title}`}
         >
