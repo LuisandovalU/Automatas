@@ -1,514 +1,1137 @@
 import React from 'react';
-import { NFA_STATIONS, NfaState } from '../data/automataData';
-import { CDMX_LINES, getStationVisualSpec } from '../data/cdmxLinesData';
-import { DEFAULT_EXERCISE_BUNDLE, SolvedMethodBundle } from '../engine/automataMethodEngine';
+import { NFA_STATIONS, NFA_TRANSITIONS } from '../data/automataData';
+import { SolvedMethodBundle } from '../engine/automataMethodEngine';
+import { getStationVisualSpec, CDMX_LINES } from '../data/cdmxLinesData';
 import { CdmxStationGlyphSvg } from './CdmxStationGlyphSvg';
 
 interface MetroMapNFAProps {
   bundle?: SolvedMethodBundle;
-  activeStates?: string[];
+  activeStates: string[];
   highlightedTransitions?: string[];
-  selectedStation?: string | null;
-  onSelectStation?: (state: string) => void;
+  highlightedEpsilonPath?: string[];
+  selectedStation?: string;
+  onSelectStation?: (stateId: string) => void;
+  onSelectState?: (stateId: string) => void;
   showNewAccepts?: boolean;
+  showClosureBadge?: boolean;
   caption?: string;
 }
 
-function getBoxBoundaryPoint(
-  cx: number,
-  cy: number,
-  targetX: number,
-  targetY: number,
-  hw: number,
-  hh: number
-): { x: number; y: number } {
-  const dx = targetX - cx;
-  const dy = targetY - cy;
-  if (Math.abs(dx) < 1e-4 && Math.abs(dy) < 1e-4) return { x: cx, y: cy };
-  const tx = Math.abs(dx) > 1e-4 ? hw / Math.abs(dx) : Infinity;
-  const ty = Math.abs(dy) > 1e-4 ? hh / Math.abs(dy) : Infinity;
-  const t = Math.min(tx, ty);
-  return { x: cx + dx * t, y: cy + dy * t };
+const DEFAULT_POSITIONS: Record<string, { x: number; y: number }> = {
+  A: { x: 105, y: 185 },
+  B: { x: 255, y: 185 },
+  C: { x: 405, y: 185 },
+  D: { x: 555, y: 185 },
+  E: { x: 705, y: 185 },
+  F: { x: 855, y: 185 },
+};
+
+const SYMBOL_STYLE: Record<string, { stroke: string; badgeBg: string; label: string; dash?: string }> = {
+  a: { stroke: '#F04E98', badgeBg: '#F04E98', label: 'a · L1 Rosa' },
+  b: { stroke: '#005EB8', badgeBg: '#005EB8', label: 'b · L2 Azul' },
+  c: { stroke: '#AF9800', badgeBg: '#AF9800', label: 'c · L3 Olivo' },
+  '0': { stroke: '#F04E98', badgeBg: '#F04E98', label: '0 · L1 Rosa' },
+  '1': { stroke: '#005EB8', badgeBg: '#005EB8', label: '1 · L2 Azul' },
+  'ε': { stroke: '#10b981', badgeBg: '#059669', label: 'ε · Transbordo Libre', dash: '7,4' },
+};
+
+function getSymbolStyle(symbol: string) {
+  return (
+    SYMBOL_STYLE[symbol] || {
+      stroke: '#FF6B00',
+      badgeBg: '#FF6B00',
+      label: `${symbol} · Vía Metro`,
+    }
+  );
 }
 
+interface NfaStationPlaqueProps {
+  id: string;
+  metroName: string;
+  x: number;
+  y: number;
+  isOriginalAccept?: boolean;
+  isNewAccept?: boolean;
+  showNewAccepts?: boolean;
+  isActive: boolean;
+  isSelected: boolean;
+  showClosureBadge: boolean;
+  closureSet?: string[];
+  onSelect?: (id: string) => void;
+}
+
+const NfaStationPlaque: React.FC<NfaStationPlaqueProps> = ({
+  id,
+  metroName,
+  x,
+  y,
+  isOriginalAccept,
+  isNewAccept,
+  showNewAccepts = true,
+  isActive,
+  isSelected,
+  showClosureBadge,
+  closureSet,
+  onSelect,
+}) => {
+  const spec = getStationVisualSpec(id);
+  const w = 68;
+  const h = 76;
+  const halfW = w / 2;
+  const halfH = h / 2;
+  const clipId = `nfa-plaque-clip-${id.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+  const bandWidth = w / Math.max(1, spec.lines.length);
+
+  const isAccept = isOriginalAccept || (showNewAccepts && isNewAccept);
+  const shortName =
+    metroName.length > 13 ? `${metroName.slice(0, 12)}…` : metroName;
+
+  return (
+    <g
+      onClick={() => onSelect?.(id)}
+      style={{ cursor: 'pointer' }}
+      role="button"
+      aria-label={`Estación ${id} (${metroName})`}
+    >
+      <defs>
+        <clipPath id={clipId}>
+          <rect x={x - halfW} y={y - halfH} width={w} height={h} rx="13" />
+        </clipPath>
+      </defs>
+
+      {/* Active or Selected pulse halo */}
+      {(isActive || isSelected) && (
+        <rect
+          x={x - halfW - 8}
+          y={y - halfH - 8}
+          width={w + 16}
+          height={h + 16}
+          rx="18"
+          fill="none"
+          stroke={isActive ? '#FF6B00' : '#0284c7'}
+          strokeWidth="3.2"
+          opacity="0.52"
+        />
+      )}
+
+      {/* Double border ring for accepting states (EF=1) */}
+      {isAccept && (
+        <rect
+          x={x - halfW - 5}
+          y={y - halfH - 5}
+          width={w + 10}
+          height={h + 10}
+          rx="16"
+          fill="none"
+          stroke={isOriginalAccept ? '#059669' : '#10b981'}
+          strokeWidth="2.6"
+          strokeDasharray={isOriginalAccept ? undefined : '5,2.5'}
+        />
+      )}
+
+      {/* Official STC Metro station plaque body */}
+      <g clipPath={`url(#${clipId})`} filter="url(#nfaCardShadow)">
+        <rect
+          x={x - halfW}
+          y={y - halfH}
+          width={w}
+          height={h}
+          rx="13"
+          fill={spec.primaryColor}
+        />
+
+        {/* Multi-line vertical correspondence bands at top header */}
+        {spec.lines.map((lineId, idx) => {
+          const lineColor = CDMX_LINES[lineId]?.color || spec.primaryColor;
+          return (
+            <rect
+              key={`${id}-band-${lineId}-${idx}`}
+              x={x - halfW + idx * bandWidth}
+              y={y - halfH}
+              width={bandWidth + 0.5}
+              height={11}
+              fill={lineColor}
+            />
+          );
+        })}
+
+        {/* Subtle inner contrast sheen */}
+        <rect
+          x={x - halfW}
+          y={y - halfH + 11}
+          width={w}
+          height={42}
+          fill="#0f172a"
+          opacity="0.14"
+        />
+
+        {/* Bottom dark STC nameplate band */}
+        <rect
+          x={x - halfW}
+          y={y + halfH - 23}
+          width={w}
+          height={23}
+          fill="#0f172a"
+          opacity="0.93"
+        />
+        <line
+          x1={x - halfW}
+          y1={y + halfH - 23}
+          x2={x + halfW}
+          y2={y + halfH - 23}
+          stroke="#ffffff"
+          strokeWidth="1"
+          opacity="0.35"
+        />
+      </g>
+
+      {/* Outer crisp border */}
+      <rect
+        x={x - halfW}
+        y={y - halfH}
+        width={w}
+        height={h}
+        rx="13"
+        fill="none"
+        stroke={isActive ? '#FF6B00' : isSelected ? '#0284c7' : '#0f172a'}
+        strokeWidth={isActive || isSelected ? 3.2 : 2.2}
+      />
+
+      {/* Official STC Metro Pictogram centered inside upper zone */}
+      <g transform={`translate(${x}, ${y - 9}) scale(1.06)`}>
+        <CdmxStationGlyphSvg
+          glyphId={spec.glyphId}
+          memberGlyphs={spec.memberGlyphs}
+          color="#ffffff"
+        />
+      </g>
+
+      {/* State ID badge in top-right corner */}
+      <g transform={`translate(${x + halfW - 11}, ${y - halfH + 11})`}>
+        <rect
+          x="-11"
+          y="-9"
+          width="22"
+          height="17"
+          rx="5"
+          fill="#0f172a"
+          stroke="#ffffff"
+          strokeWidth="1.4"
+        />
+        <text
+          x="0"
+          y="3.5"
+          textAnchor="middle"
+          fill="#ffffff"
+          fontSize={id.length > 2 ? '8.5' : '10.5'}
+          fontWeight="900"
+          fontFamily="monospace"
+        >
+          {id}
+        </text>
+      </g>
+
+      {/* Accepting state mini pill on top-left */}
+      {isAccept && (
+        <g transform={`translate(${x - halfW + 14}, ${y - halfH + 10})`}>
+          <rect
+            x="-13"
+            y="-8"
+            width="26"
+            height="14"
+            rx="4"
+            fill="#059669"
+            stroke="#ffffff"
+            strokeWidth="1.1"
+          />
+          <text
+            x="0"
+            y="2"
+            textAnchor="middle"
+            fill="#ffffff"
+            fontSize="7"
+            fontWeight="900"
+          >
+            EF=1
+          </text>
+        </g>
+      )}
+
+      {/* Official Station Name inside bottom dark band */}
+      <text
+        x={x}
+        y={y + halfH - 12}
+        textAnchor="middle"
+        fill="#ffffff"
+        fontSize="7.6"
+        fontWeight="900"
+        letterSpacing="0.01em"
+      >
+        {shortName}
+      </text>
+
+      {/* Official Line number mini squares inside bottom edge */}
+      <g
+        transform={`translate(${
+          x - (Math.min(4, spec.lines.length) * 11) / 2
+        }, ${y + halfH - 9.5})`}
+      >
+        {spec.lines.slice(0, 4).map((lineId, idx) => {
+          const lineSpec = CDMX_LINES[lineId];
+          if (!lineSpec) return null;
+          return (
+            <g key={`${id}-mini-sq-${lineId}`} transform={`translate(${idx * 11}, 0)`}>
+              <rect
+                x="0"
+                y="0"
+                width="9.5"
+                height="8"
+                rx="2"
+                fill={lineSpec.color}
+                stroke="#ffffff"
+                strokeWidth="0.6"
+              />
+              <text
+                x="4.75"
+                y="6"
+                textAnchor="middle"
+                fill={lineSpec.textColor}
+                fontSize="5.8"
+                fontWeight="900"
+              >
+                {lineId}
+              </text>
+            </g>
+          );
+        })}
+      </g>
+
+      {/* Active train indicator badge */}
+      {isActive && (
+        <g transform={`translate(${x}, ${y - halfH - 14})`}>
+          <rect
+            x="-24"
+            y="-9"
+            width="48"
+            height="16"
+            rx="8"
+            fill="#FF6B00"
+            stroke="#ffffff"
+            strokeWidth="1.2"
+          />
+          <text
+            x="0"
+            y="2.5"
+            textAnchor="middle"
+            fill="#ffffff"
+            fontSize="8"
+            fontWeight="900"
+          >
+            🚇 AQUÍ
+          </text>
+        </g>
+      )}
+
+      {/* Optional C-ε(q) pill below plaque */}
+      {showClosureBadge && closureSet && closureSet.length > 0 && (
+        <g transform={`translate(${x}, ${y + halfH + 15})`}>
+          <rect
+            x="-36"
+            y="-9"
+            width="72"
+            height="17"
+            rx="6"
+            fill="#ecfdf5"
+            stroke="#10b981"
+            strokeWidth="1.2"
+          />
+          <text
+            x="0"
+            y="3"
+            textAnchor="middle"
+            fill="#047857"
+            fontSize="7.8"
+            fontWeight="900"
+            fontFamily="monospace"
+          >
+            {`{${closureSet.join(',')}}`}
+          </text>
+        </g>
+      )}
+    </g>
+  );
+};
+
 export const MetroMapNFA: React.FC<MetroMapNFAProps> = ({
-  bundle = DEFAULT_EXERCISE_BUNDLE,
-  activeStates = [],
+  bundle,
+  activeStates,
   highlightedTransitions = [],
-  selectedStation = null,
+  highlightedEpsilonPath = [],
+  selectedStation,
   onSelectStation,
-  showNewAccepts = false,
+  onSelectState,
+  showNewAccepts = true,
+  showClosureBadge = true,
   caption,
 }) => {
-  const isTransitionHot = (id: string) => highlightedTransitions.includes(id);
+  const handleSelect = (id: string) => {
+    onSelectStation?.(id);
+    onSelectState?.(id);
+  };
 
-  // Preserve the iconic handcrafted layout for Exercise A2 (ab)a*
-  if (bundle.spec.id === 'a2-ab-astar') {
-    const stationOrder: NfaState[] = ['A', 'B', 'C', 'D', 'E', 'F'];
+  const isCustomBundle = bundle && bundle.spec.id !== 'a2-ab-astar';
+
+  const isEdgeHighlighted = (edgeId: string, from: string, to: string, symbol: string) => {
+    if (highlightedTransitions.includes(edgeId)) return true;
+    if (
+      symbol === 'ε' &&
+      highlightedEpsilonPath.includes(from) &&
+      highlightedEpsilonPath.includes(to)
+    ) {
+      return true;
+    }
+    return activeStates.includes(from) && activeStates.includes(to);
+  };
+
+  // ============================================================================
+  // CASE 1: Masterpiece layout for the canonical (ab)a* NFA-ε
+  // ============================================================================
+  if (!isCustomBundle) {
+    const halfW = 34;
+    const halfH = 38;
+    const baseY = 185;
+    const nfaStationsList = Object.values(NFA_STATIONS);
 
     return (
-      <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 mb-3 border-b border-slate-100">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">
-              Red Original AFN-ε · Expresión (ab)a*
-            </h3>
-            {caption && <p className="text-xs text-slate-500 mt-0.5">{caption}</p>}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-5 h-0.5 bg-orange-600 inline-block" />
-              <span>Tren pagado (a, b)</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-5 h-0.5 border-t-2 border-dashed border-sky-600 inline-block" />
-              <span>Pasillo gratis (ε)</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-3.5 h-3.5 rounded border-2 border-emerald-600 ring-2 ring-emerald-200 inline-block" />
-              <span>Salida válida</span>
-            </span>
-          </div>
-        </div>
-
-        <div className="metro-grid-bg rounded-lg border border-slate-100 overflow-x-auto">
+      <div className="w-full space-y-2">
+        <div className="w-full overflow-x-auto">
           <svg
-            viewBox="0 0 920 330"
-            className="w-full min-w-[680px] h-auto select-none"
+            viewBox="0 0 960 365"
+            className="w-full h-auto min-w-[720px] select-none"
             role="img"
-            aria-label="Mapa tipo Metro CDMX del autómata AFN-épsilon"
+            aria-label="Diagrama de Red Metro AFN con transiciones épsilon para (ab)a*"
           >
             <defs>
-              <marker id="arrow-train" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                <path d="M 0 1 L 10 5 L 0 9 z" fill="#ea580c" />
+              <pattern id="nfaGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+                <path
+                  d="M 24 0 L 0 0 0 24"
+                  fill="none"
+                  stroke="#e2e8f0"
+                  strokeWidth="0.8"
+                />
+              </pattern>
+
+              <marker
+                id="arrowPink"
+                viewBox="0 0 10 10"
+                refX="8.5"
+                refY="5"
+                markerWidth="6.5"
+                markerHeight="6.5"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#F04E98" />
               </marker>
-              <marker id="arrow-train-hot" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M 0 1 L 10 5 L 0 9 z" fill="#9a3412" />
+              <marker
+                id="arrowBlue"
+                viewBox="0 0 10 10"
+                refX="8.5"
+                refY="5"
+                markerWidth="6.5"
+                markerHeight="6.5"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#005EB8" />
               </marker>
-              <marker id="arrow-walk" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                <path d="M 0 1 L 10 5 L 0 9 z" fill="#0284c7" />
+              <marker
+                id="arrowEmerald"
+                viewBox="0 0 10 10"
+                refX="8.5"
+                refY="5"
+                markerWidth="6.5"
+                markerHeight="6.5"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#10b981" />
               </marker>
-              <marker id="arrow-walk-hot" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M 0 1 L 10 5 L 0 9 z" fill="#0369a1" />
+              <marker
+                id="arrowStart"
+                viewBox="0 0 10 10"
+                refX="8.5"
+                refY="5"
+                markerWidth="6.5"
+                markerHeight="6.5"
+                orient="auto"
+              >
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#0f172a" />
               </marker>
-              <marker id="arrow-start" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-                <path d="M 0 1 L 10 5 L 0 9 z" fill="#334155" />
-              </marker>
+
+              <filter id="nfaCardShadow" x="-20%" y="-20%" width="140%" height="145%">
+                <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#0f172a" floodOpacity="0.18" />
+              </filter>
+              <filter id="nfaPillShadow" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="1.5" stdDeviation="2" floodColor="#0f172a" floodOpacity="0.16" />
+              </filter>
             </defs>
 
-            {/* Inicio */}
-            <g>
-              <line x1="22" y1="180" x2="66" y2="180" stroke="#334155" strokeWidth="2.5" markerEnd="url(#arrow-start)" />
-              <text x="20" y="166" className="fill-slate-700 text-[12px] font-semibold">Inicio</text>
+            {/* Subtle Metro blueprint background */}
+            <rect
+              x="8"
+              y="8"
+              width="944"
+              height="349"
+              rx="20"
+              fill="url(#nfaGrid)"
+              stroke="#cbd5e1"
+              strokeWidth="1.2"
+            />
+
+            {/* Top Title Banner inside SVG */}
+            <g transform="translate(24, 24)">
+              <rect
+                x="0"
+                y="0"
+                width="380"
+                height="30"
+                rx="9"
+                fill="#0f172a"
+              />
+              <circle cx="15" cy="15" r="5" fill="#FF6B00" />
+              <text
+                x="28"
+                y="19"
+                fill="#ffffff"
+                fontSize="11"
+                fontWeight="900"
+                letterSpacing="0.06em"
+              >
+                PLANO OFICIAL STC METRO AFN-ε · ER = (ab)a*
+              </text>
             </g>
 
-            {/* A -> B (a) */}
+            {/* Initial Entry Arrow -> A */}
             <g>
-              <line x1="130" y1="180" x2="212" y2="180" stroke={isTransitionHot('A-a-B') ? '#9a3412' : '#ea580c'} strokeWidth={isTransitionHot('A-a-B') ? 5 : 3.5} markerEnd={isTransitionHot('A-a-B') ? 'url(#arrow-train-hot)' : 'url(#arrow-train)'} />
-              <rect x="148" y="146" width="46" height="22" rx="5" fill="#fff7ed" stroke="#fdba74" />
-              <text x="171" y="161" textAnchor="middle" className="fill-orange-800 text-[11px] font-mono font-semibold">a · tren</text>
+              <line
+                x1="24"
+                y1={baseY}
+                x2={DEFAULT_POSITIONS.A.x - halfW - 4}
+                y2={baseY}
+                stroke="#0f172a"
+                strokeWidth="3.5"
+                markerEnd="url(#arrowStart)"
+              />
+              <rect
+                x="16"
+                y={baseY - 26}
+                width="44"
+                height="16"
+                rx="4"
+                fill="#0f172a"
+              />
+              <text
+                x="38"
+                y={baseY - 15}
+                textAnchor="middle"
+                fill="#ffffff"
+                fontSize="8.5"
+                fontWeight="900"
+                letterSpacing="0.06em"
+              >
+                INICIO
+              </text>
             </g>
 
-            {/* B -> C (b) */}
-            <g>
-              <line x1="275" y1="180" x2="357" y2="180" stroke={isTransitionHot('B-b-C') ? '#9a3412' : '#ea580c'} strokeWidth={isTransitionHot('B-b-C') ? 5 : 3.5} markerEnd={isTransitionHot('B-b-C') ? 'url(#arrow-train-hot)' : 'url(#arrow-train)'} />
-              <rect x="293" y="146" width="46" height="22" rx="5" fill="#fff7ed" stroke="#fdba74" />
-              <text x="316" y="161" textAnchor="middle" className="fill-orange-800 text-[11px] font-mono font-semibold">b · tren</text>
-            </g>
+            {/* ================= TRANSITION TRACKS ================= */}
+            {NFA_TRANSITIONS.map((t) => {
+              const fromPos = DEFAULT_POSITIONS[t.from];
+              const toPos = DEFAULT_POSITIONS[t.to];
+              const style = getSymbolStyle(t.label);
+              const highlighted = isEdgeHighlighted(t.id, t.from, t.to, t.label);
+              const markerId =
+                t.label === 'a'
+                  ? 'url(#arrowPink)'
+                  : t.label === 'b'
+                  ? 'url(#arrowBlue)'
+                  : 'url(#arrowEmerald)';
 
-            {/* C -> D (ε) */}
-            <g>
-              <line x1="420" y1="180" x2="502" y2="180" stroke={isTransitionHot('C-e-D') ? '#0369a1' : '#0284c7'} strokeWidth={isTransitionHot('C-e-D') ? 4.5 : 3} strokeDasharray="6 4" markerEnd={isTransitionHot('C-e-D') ? 'url(#arrow-walk-hot)' : 'url(#arrow-walk)'} />
-              <rect x="435" y="146" width="52" height="22" rx="5" fill="#f0f9ff" stroke="#7dd3fc" />
-              <text x="461" y="161" textAnchor="middle" className="fill-sky-800 text-[11px] font-mono font-semibold">ε · gratis</text>
-            </g>
+              if (t.from === 'E' && t.to === 'D') {
+                // E -> D top loop (Retroceso 'ε' de Kleene a*)
+                const startX = fromPos.x - 8;
+                const startY = fromPos.y - halfH - 2;
+                const endX = toPos.x + 8;
+                const endY = toPos.y - halfH - 2;
+                const midX = (startX + endX) / 2;
+                const ctrlY = 44;
+                const pathD = `M ${startX} ${startY} Q ${midX} ${ctrlY} ${endX} ${endY}`;
+                const labelY = 0.25 * startY + 0.5 * ctrlY + 0.25 * endY;
 
-            {/* D -> E (a) */}
-            <g>
-              <line x1="565" y1="180" x2="647" y2="180" stroke={isTransitionHot('D-a-E') ? '#9a3412' : '#ea580c'} strokeWidth={isTransitionHot('D-a-E') ? 5 : 3.5} markerEnd={isTransitionHot('D-a-E') ? 'url(#arrow-train-hot)' : 'url(#arrow-train)'} />
-              <rect x="583" y="146" width="46" height="22" rx="5" fill="#fff7ed" stroke="#fdba74" />
-              <text x="606" y="161" textAnchor="middle" className="fill-orange-800 text-[11px] font-mono font-semibold">a · tren</text>
-            </g>
+                return (
+                  <g key={t.id}>
+                    <path
+                      d={pathD}
+                      fill="none"
+                      stroke="#ffffff"
+                      strokeWidth={highlighted ? 9 : 7}
+                      strokeLinecap="round"
+                      opacity="0.9"
+                    />
+                    <path
+                      d={pathD}
+                      fill="none"
+                      stroke={style.stroke}
+                      strokeWidth={highlighted ? 4.5 : 3.2}
+                      strokeDasharray={style.dash}
+                      markerEnd={markerId}
+                    />
+                    <g transform={`translate(${midX}, ${labelY - 2})`} filter="url(#nfaPillShadow)">
+                      <rect
+                        x="-62"
+                        y="-12"
+                        width="124"
+                        height="22"
+                        rx="11"
+                        fill="#ffffff"
+                        stroke={style.stroke}
+                        strokeWidth="2"
+                      />
+                      <text
+                        x="0"
+                        y="3"
+                        textAnchor="middle"
+                        fill="#0f172a"
+                        fontSize="10"
+                        fontWeight="900"
+                      >
+                        ε (Ciclo Kleene a*)
+                      </text>
+                    </g>
+                  </g>
+                );
+              }
 
-            {/* E -> F (ε) */}
-            <g>
-              <line x1="710" y1="180" x2="792" y2="180" stroke={isTransitionHot('E-e-F') ? '#0369a1' : '#0284c7'} strokeWidth={isTransitionHot('E-e-F') ? 4.5 : 3} strokeDasharray="6 4" markerEnd={isTransitionHot('E-e-F') ? 'url(#arrow-walk-hot)' : 'url(#arrow-walk)'} />
-              <rect x="725" y="146" width="52" height="22" rx="5" fill="#f0f9ff" stroke="#7dd3fc" />
-              <text x="751" y="161" textAnchor="middle" className="fill-sky-800 text-[11px] font-mono font-semibold">ε · salir</text>
-            </g>
+              if (t.from === 'C' && t.to === 'F') {
+                // C -> F bottom bypass (Puente ε que salta a* cuando hay 0 repeticiones)
+                const startX = fromPos.x + 6;
+                const startY = fromPos.y + halfH + 3;
+                const endX = toPos.x - 6;
+                const endY = toPos.y + halfH + 3;
+                const midX = (startX + endX) / 2;
+                const ctrlY = 342;
+                const pathD = `M ${startX} ${startY} Q ${midX} ${ctrlY} ${endX} ${endY}`;
+                const labelY = 0.25 * startY + 0.5 * ctrlY + 0.25 * endY;
 
-            {/* E -> D (ε top return loop) */}
-            <g>
-              <path d="M 680 148 C 680 72, 535 72, 535 144" fill="none" stroke={isTransitionHot('E-e-D') ? '#0369a1' : '#0284c7'} strokeWidth={isTransitionHot('E-e-D') ? 4.5 : 3} strokeDasharray="6 4" markerEnd={isTransitionHot('E-e-D') ? 'url(#arrow-walk-hot)' : 'url(#arrow-walk)'} />
-              <rect x="594" y="65" width="28" height="20" rx="4" fill="#f0f9ff" stroke="#7dd3fc" />
-              <text x="608" y="79" textAnchor="middle" className="fill-sky-800 text-[13px] font-mono font-semibold">ε</text>
-              <text x="608" y="54" textAnchor="middle" className="fill-slate-500 text-[11px]">regresa por otra &quot;a&quot;</text>
-            </g>
+                return (
+                  <g key={t.id}>
+                    <path
+                      d={pathD}
+                      fill="none"
+                      stroke="#ffffff"
+                      strokeWidth={highlighted ? 9 : 7}
+                      strokeLinecap="round"
+                      opacity="0.92"
+                    />
+                    <path
+                      d={pathD}
+                      fill="none"
+                      stroke={style.stroke}
+                      strokeWidth={highlighted ? 4.5 : 3.2}
+                      strokeDasharray={style.dash}
+                      markerEnd={markerId}
+                    />
+                    <g transform={`translate(${midX}, ${labelY})`} filter="url(#nfaPillShadow)">
+                      <rect
+                        x="-78"
+                        y="-12"
+                        width="156"
+                        height="22"
+                        rx="11"
+                        fill="#ffffff"
+                        stroke={style.stroke}
+                        strokeWidth="2"
+                      />
+                      <text
+                        x="0"
+                        y="3"
+                        textAnchor="middle"
+                        fill="#0f172a"
+                        fontSize="10"
+                        fontWeight="900"
+                      >
+                        ε (Bypass Directo a Salida F)
+                      </text>
+                    </g>
+                  </g>
+                );
+              }
 
-            {/* C -> F (ε bottom express bypass) */}
-            <g>
-              <path d="M 390 212 C 460 302, 755 302, 822 216" fill="none" stroke={isTransitionHot('C-e-F') ? '#0369a1' : '#0284c7'} strokeWidth={isTransitionHot('C-e-F') ? 4.5 : 3} strokeDasharray="6 4" markerEnd={isTransitionHot('C-e-F') ? 'url(#arrow-walk-hot)' : 'url(#arrow-walk)'} />
-              <rect x="594" y="268" width="28" height="20" rx="4" fill="#f0f9ff" stroke="#7dd3fc" />
-              <text x="608" y="282" textAnchor="middle" className="fill-sky-800 text-[13px] font-mono font-semibold">ε</text>
-              <text x="608" y="304" textAnchor="middle" className="fill-slate-500 text-[11px]">atajo gratis sin &quot;a&quot;s extra</text>
-            </g>
-
-            {/* Stations */}
-            {stationOrder.map((id) => {
-              const st = NFA_STATIONS[id];
-              const spec = getStationVisualSpec(id);
-              const isActive = activeStates.includes(id);
-              const isSelected = selectedStation === id;
-              const isAccept = showNewAccepts ? st.isNewAccept : Boolean(st.isOriginalAccept);
-              const sliceW = 54 / Math.max(1, spec.lines.length);
-              const clipId = `nfa-clip-${id}`;
+              // Straight horizontal track between adjacent stations
+              const x1 = fromPos.x + halfW + 2;
+              const x2 = toPos.x - halfW - 5;
+              const y = fromPos.y;
+              const midX = (x1 + x2) / 2;
 
               return (
-                <g key={id} transform={`translate(${st.x}, ${st.y})`} onClick={() => onSelectStation?.(id)} className={onSelectStation ? 'cursor-pointer' : undefined}>
-                  <defs>
-                    <clipPath id={clipId}>
-                      <rect x="-27" y="-27" width="54" height="54" rx="11" />
-                    </clipPath>
-                  </defs>
-                  {(isActive || isSelected) && (
-                    <rect x="-39" y="-39" width="78" height="78" rx="17" fill="none" stroke={isActive ? '#ea580c' : '#0284c7'} strokeWidth="3" opacity="0.95" />
-                  )}
-                  {isAccept && (
-                    <rect x="-33" y="-33" width="66" height="66" rx="14" fill="none" stroke="#059669" strokeWidth="2.5" />
-                  )}
-                  <g clipPath={`url(#${clipId})`}>
-                    {spec.lines.map((lineCode, idx) => (
-                      <rect key={lineCode} x={-27 + idx * sliceW} y="-27" width={sliceW + 0.8} height="54" fill={CDMX_LINES[lineCode].color} />
-                    ))}
-                    <rect x="-27" y="-27" width="54" height="54" fill="#0f172a" opacity="0.22" />
+                <g key={t.id}>
+                  <line
+                    x1={x1}
+                    y1={y}
+                    x2={x2}
+                    y2={y}
+                    stroke="#ffffff"
+                    strokeWidth="9"
+                    strokeLinecap="round"
+                  />
+                  <line
+                    x1={x1}
+                    y1={y}
+                    x2={x2}
+                    y2={y}
+                    stroke="#e2e8f0"
+                    strokeWidth="6.5"
+                    strokeLinecap="round"
+                  />
+                  <line
+                    x1={x1}
+                    y1={y}
+                    x2={x2}
+                    y2={y}
+                    stroke={style.stroke}
+                    strokeWidth={highlighted ? 4.8 : 3.8}
+                    strokeDasharray={style.dash}
+                    markerEnd={markerId}
+                  />
+                  <g transform={`translate(${midX}, ${y - 22})`} filter="url(#nfaPillShadow)">
+                    <rect
+                      x="-17"
+                      y="-11"
+                      width="34"
+                      height="21"
+                      rx="7"
+                      fill={style.badgeBg}
+                      stroke="#ffffff"
+                      strokeWidth="1.5"
+                    />
+                    <text
+                      x="0"
+                      y="3.5"
+                      textAnchor="middle"
+                      fill="#ffffff"
+                      fontSize="11.5"
+                      fontWeight="900"
+                    >
+                      {t.label}
+                    </text>
                   </g>
-                  <rect x="-27" y="-27" width="54" height="54" rx="11" fill="none" stroke={isActive ? '#0f172a' : isAccept ? '#059669' : '#1e293b'} strokeWidth={isActive ? 3 : 2} />
-                  <g transform="translate(0, -1) scale(0.95)">
-                    <CdmxStationGlyphSvg glyphId={spec.glyphId} color="#ffffff" />
-                  </g>
-                  <g transform="translate(21, -21)">
-                    <circle r="10" fill="#0f172a" stroke="#ffffff" strokeWidth="1.8" />
-                    <text x="0" y="3.5" textAnchor="middle" className="fill-white text-[11px] font-mono font-bold">{id}</text>
-                  </g>
-                  <text x="0" y="44" textAnchor="middle" className="fill-slate-800 text-[11px] font-bold">{st.metroName}</text>
-                  <g transform={`translate(${-((spec.lines.length * 16 - 2) / 2)}, 50)`}>
-                    {spec.lines.map((lineCode, idx) => {
-                      const info = CDMX_LINES[lineCode];
-                      return (
-                        <g key={lineCode} transform={`translate(${idx * 16}, 0)`}>
-                          <rect width="14" height="14" rx="3" fill={info.color} />
-                          <text x="7" y="10.5" textAnchor="middle" fill={info.textColor} className="text-[9px] font-bold">{info.code}</text>
-                        </g>
-                      );
-                    })}
-                  </g>
-                  {isActive && (
-                    <g transform="translate(0, -47)">
-                      <rect x="-26" y="-10" width="52" height="18" rx="4" fill="#0f172a" />
-                      <text x="0" y="3" textAnchor="middle" className="fill-white text-[10px] font-semibold">AQUÍ</text>
-                    </g>
-                  )}
                 </g>
+              );
+            })}
+
+            {/* ================= STATION PLAQUES (A..F) ================= */}
+            {nfaStationsList.map((st) => {
+              const pos = DEFAULT_POSITIONS[st.id];
+              const isActive = activeStates.includes(st.id);
+              const isSelected = selectedStation === st.id;
+
+              return (
+                <NfaStationPlaque
+                  key={st.id}
+                  id={st.id}
+                  metroName={st.metroName}
+                  x={pos.x}
+                  y={pos.y}
+                  isOriginalAccept={st.isOriginalAccept}
+                  isNewAccept={st.isNewAccept}
+                  showNewAccepts={showNewAccepts}
+                  isActive={isActive}
+                  isSelected={isSelected}
+                  showClosureBadge={showClosureBadge}
+                  closureSet={st.epsilonClosure}
+                  onSelect={handleSelect}
+                />
               );
             })}
           </svg>
         </div>
+        {caption && (
+          <div className="text-xs text-slate-600 font-medium px-2">{caption}</div>
+        )}
       </div>
     );
   }
 
-  // Dynamic layout renderer for ANY custom Regex or AFN-ε
-  const { width, height, nodes, edges } = bundle.nfaLayout;
-  const nodeById = Object.fromEntries(nodes.map((n) => [n.id, n]));
-  const hw = 28;
-  const hh = 28;
-
-  const edgeIndexInPair = new Map<string, number>();
-  const edgeCountInPair = new Map<string, number>();
-  for (const e of edges) {
-    const key = `${e.from}->${e.to}`;
-    edgeCountInPair.set(key, (edgeCountInPair.get(key) ?? 0) + 1);
-  }
+  // ============================================================================
+  // CASE 2: Dynamic SVG Layout for Any Exercise or Custom Regex Bundle
+  // ============================================================================
+  const { nodes, edges, width, height } = bundle.nfaLayout;
+  const nodeMap = new Map<string, { x: number; y: number }>(
+    nodes.map((n) => [n.id, { x: n.x, y: n.y }])
+  );
+  const startNode = nodes.find((n) => n.isStart) || nodes[0];
+  const halfW = 34;
+  const halfH = 38;
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 mb-3 border-b border-slate-100">
-        <div>
-          <h3 className="text-base font-semibold text-slate-900">
-            Red Original AFN-ε · {bundle.spec.regex ?? bundle.spec.title}
-          </h3>
-          {caption && <p className="text-xs text-slate-500 mt-0.5">{caption}</p>}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-5 h-0.5 bg-orange-600 inline-block" />
-            <span>Tren pagado ({bundle.spec.alphabet.join(', ')})</span>
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-5 h-0.5 border-t-2 border-dashed border-sky-600 inline-block" />
-            <span>Pasillo gratis (ε)</span>
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-3.5 h-3.5 rounded border-2 border-emerald-600 ring-2 ring-emerald-200 inline-block" />
-            <span>Salida válida</span>
-          </span>
-        </div>
-      </div>
-
-      <div className="metro-grid-bg rounded-lg border border-slate-100 overflow-x-auto">
+    <div className="w-full space-y-2">
+      <div className="w-full overflow-x-auto">
         <svg
           viewBox={`0 0 ${width} ${height}`}
-          className="w-full min-w-[660px] h-auto select-none"
+          className="w-full h-auto min-w-[700px] select-none"
           role="img"
-          aria-label={`Diagrama AFN-épsilon de ${bundle.spec.title}`}
+          aria-label={`Diagrama de Red Metro AFN-ε para ${bundle.spec.title}`}
         >
           <defs>
-            <marker id="dyn-nfa-train" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-              <path d="M 0 1 L 10 5 L 0 9 z" fill="#ea580c" />
+            <pattern id="nfaGridDyn" width="24" height="24" patternUnits="userSpaceOnUse">
+              <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e2e8f0" strokeWidth="0.8" />
+            </pattern>
+            <marker
+              id="dynArrowA"
+              viewBox="0 0 10 10"
+              refX="8.5"
+              refY="5"
+              markerWidth="6.5"
+              markerHeight="6.5"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#F04E98" />
             </marker>
-            <marker id="dyn-nfa-train-hot" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-              <path d="M 0 1 L 10 5 L 0 9 z" fill="#9a3412" />
+            <marker
+              id="dynArrowB"
+              viewBox="0 0 10 10"
+              refX="8.5"
+              refY="5"
+              markerWidth="6.5"
+              markerHeight="6.5"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#005EB8" />
             </marker>
-            <marker id="dyn-nfa-walk" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-              <path d="M 0 1 L 10 5 L 0 9 z" fill="#0284c7" />
+            <marker
+              id="dynArrowC"
+              viewBox="0 0 10 10"
+              refX="8.5"
+              refY="5"
+              markerWidth="6.5"
+              markerHeight="6.5"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#AF9800" />
             </marker>
-            <marker id="dyn-nfa-walk-hot" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-              <path d="M 0 1 L 10 5 L 0 9 z" fill="#0369a1" />
+            <marker
+              id="dynArrowEps"
+              viewBox="0 0 10 10"
+              refX="8.5"
+              refY="5"
+              markerWidth="6.5"
+              markerHeight="6.5"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#10b981" />
             </marker>
-            <marker id="dyn-nfa-start" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-              <path d="M 0 1 L 10 5 L 0 9 z" fill="#334155" />
+            <marker
+              id="dynArrowStart"
+              viewBox="0 0 10 10"
+              refX="8.5"
+              refY="5"
+              markerWidth="6.5"
+              markerHeight="6.5"
+              orient="auto"
+            >
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#0f172a" />
             </marker>
+            <filter id="nfaCardShadow" x="-20%" y="-20%" width="140%" height="145%">
+              <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#0f172a" floodOpacity="0.18" />
+            </filter>
+            <filter id="nfaPillShadow" x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="0" dy="1.5" stdDeviation="2" floodColor="#0f172a" floodOpacity="0.16" />
+            </filter>
           </defs>
 
-          {/* Start arrow */}
-          {nodes
-            .filter((n) => n.isStart)
-            .map((n) => (
-              <g key={`start-${n.id}`}>
-                <line
-                  x1={Math.max(12, n.x - 68)}
-                  y1={n.y}
-                  x2={n.x - 32}
-                  y2={n.y}
-                  stroke="#334155"
-                  strokeWidth="2.5"
-                  markerEnd="url(#dyn-nfa-start)"
-                />
-                <text x={Math.max(10, n.x - 70)} y={n.y - 12} className="fill-slate-700 text-[11px] font-semibold">
-                  Inicio
-                </text>
-              </g>
-            ))}
+          <rect
+            x="8"
+            y="8"
+            width={width - 16}
+            height={height - 16}
+            rx="20"
+            fill="url(#nfaGridDyn)"
+            stroke="#cbd5e1"
+            strokeWidth="1.2"
+          />
+
+          {/* Top Title Banner inside Dynamic SVG */}
+          <g transform="translate(22, 20)">
+            <rect x="0" y="0" width="380" height="28" rx="8" fill="#0f172a" />
+            <circle cx="14" cy="14" r="4.5" fill="#FF6B00" />
+            <text
+              x="26"
+              y="18"
+              fill="#ffffff"
+              fontSize="10.5"
+              fontWeight="900"
+              letterSpacing="0.06em"
+            >
+              {`PLANO STC METRO AFN-ε · ${bundle.spec.title}`}
+            </text>
+          </g>
+
+          {/* Initial Entry Arrow */}
+          {startNode && (
+            <g>
+              <line
+                x1={Math.max(18, startNode.x - 95)}
+                y1={startNode.y}
+                x2={startNode.x - halfW - 5}
+                y2={startNode.y}
+                stroke="#0f172a"
+                strokeWidth="3.5"
+                markerEnd="url(#dynArrowStart)"
+              />
+              <rect
+                x={Math.max(14, startNode.x - 96)}
+                y={startNode.y - 25}
+                width="44"
+                height="16"
+                rx="4"
+                fill="#0f172a"
+              />
+              <text
+                x={Math.max(36, startNode.x - 74)}
+                y={startNode.y - 14}
+                textAnchor="middle"
+                fill="#ffffff"
+                fontSize="8.5"
+                fontWeight="900"
+              >
+                INICIO
+              </text>
+            </g>
+          )}
 
           {/* Dynamic Edges */}
           {edges.map((edge, idx) => {
-            const pFrom = nodeById[edge.from];
-            const pTo = nodeById[edge.to];
-            if (!pFrom || !pTo) return null;
+            const fromPos = nodeMap.get(edge.from);
+            const toPos = nodeMap.get(edge.to);
+            if (!fromPos || !toPos) return null;
 
-            const isWalk = edge.kind === 'walk';
-            const hot = isTransitionHot(edge.id);
-            const color = isWalk ? (hot ? '#0369a1' : '#0284c7') : hot ? '#9a3412' : '#ea580c';
-            const marker = isWalk
-              ? hot
-                ? 'url(#dyn-nfa-walk-hot)'
-                : 'url(#dyn-nfa-walk)'
-              : hot
-              ? 'url(#dyn-nfa-train-hot)'
-              : 'url(#dyn-nfa-train)';
+            const style = getSymbolStyle(edge.label);
+            const highlighted = isEdgeHighlighted(edge.id, edge.from, edge.to, edge.label);
+            const markerId =
+              edge.label === 'a' || edge.label === '0'
+                ? 'url(#dynArrowA)'
+                : edge.label === 'b' || edge.label === '1'
+                ? 'url(#dynArrowB)'
+                : edge.label === 'c'
+                ? 'url(#dynArrowC)'
+                : 'url(#dynArrowEps)';
 
-            const pairKey = `${edge.from}->${edge.to}`;
-            const occIdx = edgeIndexInPair.get(pairKey) ?? 0;
-            edgeIndexInPair.set(pairKey, occIdx + 1);
-            const totalSame = edgeCountInPair.get(pairKey) ?? 1;
-
-            if (edge.from === edge.to) {
-              const cx = pFrom.x;
-              const cy = pFrom.y;
-              const ly = cy - 72;
+            if (edge.curve === 'self' || edge.from === edge.to) {
+              const pathD = `M ${fromPos.x - 14} ${fromPos.y - halfH - 2} C ${fromPos.x - 36} ${
+                fromPos.y - 110
+              }, ${fromPos.x + 36} ${fromPos.y - 110}, ${fromPos.x + 14} ${fromPos.y - halfH - 2}`;
               return (
-                <g key={`${edge.id}-${idx}`}>
+                <g key={`dyn-edge-${idx}`}>
                   <path
-                    d={`M ${cx - 12} ${cy - 27} C ${cx - 32} ${cy - 84}, ${cx + 32} ${cy - 84}, ${cx + 12} ${cy - 31}`}
+                    d={pathD}
                     fill="none"
-                    stroke={color}
-                    strokeWidth={hot ? 4.5 : 2.8}
-                    strokeDasharray={isWalk ? '6 4' : undefined}
-                    markerEnd={marker}
+                    stroke="#ffffff"
+                    strokeWidth="7"
+                    strokeLinecap="round"
+                    opacity="0.9"
                   />
-                  <rect
-                    x={cx - 16}
-                    y={ly - 10}
-                    width="32"
-                    height="18"
-                    rx="4"
-                    fill={isWalk ? '#f0f9ff' : '#fff7ed'}
-                    stroke={isWalk ? '#7dd3fc' : '#fdba74'}
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke={style.stroke}
+                    strokeWidth={highlighted ? 4.2 : 3}
+                    strokeDasharray={style.dash}
+                    markerEnd={markerId}
                   />
-                  <text
-                    x={cx}
-                    y={ly + 3}
-                    textAnchor="middle"
-                    className={`text-[11px] font-mono font-semibold ${isWalk ? 'fill-sky-800' : 'fill-orange-800'}`}
-                  >
-                    {edge.label}
-                  </text>
+                  <g transform={`translate(${fromPos.x}, ${fromPos.y - 96})`} filter="url(#nfaPillShadow)">
+                    <rect
+                      x="-16"
+                      y="-10"
+                      width="32"
+                      height="20"
+                      rx="6"
+                      fill={style.badgeBg}
+                      stroke="#ffffff"
+                      strokeWidth="1.4"
+                    />
+                    <text
+                      x="0"
+                      y="4"
+                      textAnchor="middle"
+                      fill="#ffffff"
+                      fontSize="10.5"
+                      fontWeight="900"
+                    >
+                      {edge.label}
+                    </text>
+                  </g>
                 </g>
               );
             }
 
-            const dx = pTo.x - pFrom.x;
-            const dy = pTo.y - pFrom.y;
-            const dist = Math.hypot(dx, dy) || 1;
-            const nx = -dy / dist;
-            const ny = dx / dist;
+            if (edge.curve === 'top' || edge.curve === 'bottom') {
+              const isTop = edge.curve === 'top';
+              const startX = fromPos.x + (toPos.x >= fromPos.x ? 8 : -8);
+              const startY = fromPos.y + (isTop ? -(halfH + 2) : halfH + 3);
+              const endX = toPos.x + (toPos.x >= fromPos.x ? -8 : 8);
+              const endY = toPos.y + (isTop ? -(halfH + 2) : halfH + 3);
+              const midX = (startX + endX) / 2;
+              const offset =
+                edge.curveOffset !== undefined
+                  ? edge.curveOffset
+                  : isTop
+                  ? -95
+                  : 95;
+              const ctrlY = Math.max(
+                28,
+                Math.min(height - 24, (startY + endY) / 2 + offset)
+              );
+              const pathD = `M ${startX} ${startY} Q ${midX} ${ctrlY} ${endX} ${endY}`;
+              const labelY = 0.25 * startY + 0.5 * ctrlY + 0.25 * endY;
 
-            let bend = 0;
-            if (edge.curve === 'top') {
-              bend = pFrom.x > pTo.x ? 78 : -78;
-            } else if (edge.curve === 'bottom') {
-              bend = -82;
-            } else if (totalSame > 1) {
-              bend = (occIdx - (totalSame - 1) / 2) * 44;
+              return (
+                <g key={`dyn-edge-${idx}`}>
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke="#ffffff"
+                    strokeWidth="7"
+                    strokeLinecap="round"
+                    opacity="0.9"
+                  />
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke={style.stroke}
+                    strokeWidth={highlighted ? 4.2 : 3}
+                    strokeDasharray={style.dash}
+                    markerEnd={markerId}
+                  />
+                  <g transform={`translate(${midX}, ${labelY})`} filter="url(#nfaPillShadow)">
+                    <rect
+                      x="-17"
+                      y="-10"
+                      width="34"
+                      height="20"
+                      rx="7"
+                      fill={style.badgeBg}
+                      stroke="#ffffff"
+                      strokeWidth="1.5"
+                    />
+                    <text
+                      x="0"
+                      y="4"
+                      textAnchor="middle"
+                      fill="#ffffff"
+                      fontSize="10.5"
+                      fontWeight="900"
+                    >
+                      {edge.label}
+                    </text>
+                  </g>
+                </g>
+              );
             }
 
-            const mx = (pFrom.x + pTo.x) / 2 + nx * bend;
-            const my = (pFrom.y + pTo.y) / 2 + ny * bend;
+            // Straight segment with exact rectangular boundary clipping
+            const dx = toPos.x - fromPos.x;
+            const dy = toPos.y - fromPos.y;
+            const dist = Math.hypot(dx, dy) || 1;
+            const ux = dx / dist;
+            const uy = dy / dist;
+            const txStart = Math.abs(ux) > 0.001 ? (halfW + 3) / Math.abs(ux) : Infinity;
+            const tyStart = Math.abs(uy) > 0.001 ? (halfH + 3) / Math.abs(uy) : Infinity;
+            const tStart = Math.min(txStart, tyStart);
 
-            const startPt = getBoxBoundaryPoint(pFrom.x, pFrom.y, mx, my, hw, hh);
-            const endPt = getBoxBoundaryPoint(pTo.x, pTo.y, mx, my, hw + 4, hh + 4);
+            const txEnd = Math.abs(ux) > 0.001 ? (halfW + 6) / Math.abs(ux) : Infinity;
+            const tyEnd = Math.abs(uy) > 0.001 ? (halfH + 6) / Math.abs(uy) : Infinity;
+            const tEnd = Math.min(txEnd, tyEnd);
 
-            const labelX = 0.25 * startPt.x + 0.5 * mx + 0.25 * endPt.x;
-            const labelY = 0.25 * startPt.y + 0.5 * my + 0.25 * endPt.y - (bend === 0 ? 12 : 0);
+            const x1 = fromPos.x + ux * tStart;
+            const y1 = fromPos.y + uy * tStart;
+            const x2 = toPos.x - ux * tEnd;
+            const y2 = toPos.y - uy * tEnd;
+            const midX = (x1 + x2) / 2;
+            const midY = (y1 + y2) / 2;
 
             return (
-              <g key={`${edge.id}-${idx}`}>
-                <path
-                  d={`M ${startPt.x} ${startPt.y} Q ${mx} ${my} ${endPt.x} ${endPt.y}`}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={hot ? 4.5 : 2.8}
-                  strokeDasharray={isWalk ? '6 4' : undefined}
-                  markerEnd={marker}
+              <g key={`dyn-edge-${idx}`}>
+                <line
+                  x1={x1}
+                  y1={y1}
+                  x2={x2}
+                  y2={y2}
+                  stroke="#ffffff"
+                  strokeWidth="8"
+                  strokeLinecap="round"
                 />
-                <rect
-                  x={labelX - 15}
-                  y={labelY - 9}
-                  width="30"
-                  height="18"
-                  rx="4"
-                  fill={isWalk ? '#f0f9ff' : '#fff7ed'}
-                  stroke={isWalk ? '#7dd3fc' : '#fdba74'}
+                <line
+                  x1={x1}
+                  y1={y1}
+                  x2={x2}
+                  y2={y2}
+                  stroke={style.stroke}
+                  strokeWidth={highlighted ? 4.2 : 3.2}
+                  strokeDasharray={style.dash}
+                  markerEnd={markerId}
                 />
-                <text
-                  x={labelX}
-                  y={labelY + 4}
-                  textAnchor="middle"
-                  className={`text-[11px] font-mono font-semibold ${isWalk ? 'fill-sky-800' : 'fill-orange-800'}`}
-                >
-                  {edge.label}
-                </text>
+                <g transform={`translate(${midX}, ${midY - 15})`} filter="url(#nfaPillShadow)">
+                  <rect
+                    x="-16"
+                    y="-10"
+                    width="32"
+                    height="20"
+                    rx="6"
+                    fill={style.badgeBg}
+                    stroke="#ffffff"
+                    strokeWidth="1.4"
+                  />
+                  <text
+                    x="0"
+                    y="3.5"
+                    textAnchor="middle"
+                    fill="#ffffff"
+                    fontSize="10.5"
+                    fontWeight="900"
+                  >
+                    {edge.label}
+                  </text>
+                </g>
               </g>
             );
           })}
 
-          {/* Dynamic Stations */}
+          {/* Dynamic Nodes */}
           {nodes.map((node) => {
-            const st = bundle.stations[node.id];
-            const spec = getStationVisualSpec(node.id);
+            const stInfo = bundle.stations[node.id];
             const isActive = activeStates.includes(node.id);
             const isSelected = selectedStation === node.id;
-            const isAccept = showNewAccepts ? st?.isNewAccept : node.isAccept;
-            const sliceW = 50 / Math.max(1, spec.lines.length);
-            const clipId = `dyn-nfa-clip-${node.id.replace(/[^a-zA-Z0-9]/g, '')}`;
 
             return (
-              <g
+              <NfaStationPlaque
                 key={node.id}
-                transform={`translate(${node.x}, ${node.y})`}
-                onClick={() => onSelectStation?.(node.id)}
-                className={onSelectStation ? 'cursor-pointer' : undefined}
-              >
-                <defs>
-                  <clipPath id={clipId}>
-                    <rect x="-25" y="-25" width="50" height="50" rx="11" />
-                  </clipPath>
-                </defs>
-
-                {(isActive || isSelected) && (
-                  <rect
-                    x="-37"
-                    y="-37"
-                    width="74"
-                    height="74"
-                    rx="16"
-                    fill="none"
-                    stroke={isActive ? '#ea580c' : '#0284c7'}
-                    strokeWidth="3"
-                  />
-                )}
-
-                {isAccept && (
-                  <rect
-                    x="-31"
-                    y="-31"
-                    width="62"
-                    height="62"
-                    rx="14"
-                    fill="none"
-                    stroke="#059669"
-                    strokeWidth="2.5"
-                  />
-                )}
-
-                <g clipPath={`url(#${clipId})`}>
-                  {spec.lines.map((lineCode, idx) => (
-                    <rect
-                      key={lineCode}
-                      x={-25 + idx * sliceW}
-                      y="-25"
-                      width={sliceW + 0.8}
-                      height="50"
-                      fill={CDMX_LINES[lineCode].color}
-                    />
-                  ))}
-                  <rect x="-25" y="-25" width="50" height="50" fill="#0f172a" opacity="0.28" />
-                </g>
-
-                <rect
-                  x="-25"
-                  y="-25"
-                  width="50"
-                  height="50"
-                  rx="11"
-                  fill="none"
-                  stroke={isActive ? '#0f172a' : isAccept ? '#059669' : '#1e293b'}
-                  strokeWidth={isActive ? 3 : 2}
-                />
-
-                <text x="0" y="5" textAnchor="middle" className="fill-white text-[16px] font-mono font-bold">
-                  {node.id}
-                </text>
-
-                <text x="0" y="42" textAnchor="middle" className="fill-slate-800 text-[10px] font-semibold">
-                  {st?.metroName ?? node.id}
-                </text>
-
-                {isActive && (
-                  <g transform="translate(0, -45)">
-                    <rect x="-24" y="-10" width="48" height="17" rx="4" fill="#0f172a" />
-                    <text x="0" y="2" textAnchor="middle" className="fill-white text-[9px] font-semibold">
-                      AQUÍ
-                    </text>
-                  </g>
-                )}
-              </g>
+                id={node.id}
+                metroName={stInfo?.metroName || node.subtitle || node.id}
+                x={node.x}
+                y={node.y}
+                isOriginalAccept={stInfo?.isOriginalAccept ?? node.isAccept}
+                isNewAccept={stInfo?.isNewAccept ?? node.isAccept}
+                showNewAccepts={showNewAccepts}
+                isActive={isActive}
+                isSelected={isSelected}
+                showClosureBadge={showClosureBadge}
+                closureSet={stInfo?.epsilonClosure}
+                onSelect={handleSelect}
+              />
             );
           })}
         </svg>
       </div>
+      {caption && (
+        <div className="text-xs text-slate-600 font-medium px-2">{caption}</div>
+      )}
     </div>
   );
 };

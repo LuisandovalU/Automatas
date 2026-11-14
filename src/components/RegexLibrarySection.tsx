@@ -1,358 +1,408 @@
 import React, { useState } from 'react';
-import { ArrowRight, CheckCircle2, Layers } from 'lucide-react';
-import { REGEX_LIBRARY, RegexPatternGuide, RegexPatternId } from '../data/regexLibraryData';
-import { metroAudio } from '../utils/metroAudio';
+import { REGEX_LIBRARY, RegexPatternGuide } from '../data/regexLibraryData';
+import { getStationVisualSpec } from '../data/cdmxLinesData';
+import { CdmxStationGlyphSvg } from './CdmxStationGlyphSvg';
 
-const MiniRegexDiagram: React.FC<{ pattern: RegexPatternGuide }> = ({ pattern }) => {
-  const nodeMap = Object.fromEntries(pattern.nodes.map((n) => [n.id, n]));
+interface RegexLibrarySectionProps {
+  selectedCardId?: string;
+  onSelectCard?: (id: string) => void;
+}
+
+const MiniRegexDiagram: React.FC<{ card: RegexPatternGuide }> = ({ card }) => {
+  const getStroke = (sym: string) => {
+    if (sym === 'a') return '#F04E98';
+    if (sym === 'b') return '#005EB8';
+    return '#10b981';
+  };
+
+  const getMarker = (sym: string) => {
+    if (sym === 'a') return `url(#miniPink-${card.id})`;
+    if (sym === 'b') return `url(#miniBlue-${card.id})`;
+    return `url(#miniEmerald-${card.id})`;
+  };
 
   return (
-    <div className="metro-grid-bg rounded-lg border border-slate-200 overflow-x-auto">
-      <svg
-        viewBox="0 0 530 230"
-        className="w-full min-w-[440px] h-auto select-none"
-        role="img"
-        aria-label={`Diagrama de ${pattern.expression}`}
-      >
-        <defs>
-          <marker id="lib-arrow-train" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-            <path d="M 0 1 L 10 5 L 0 9 z" fill="#ea580c" />
-          </marker>
-          <marker id="lib-arrow-walk" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-            <path d="M 0 1 L 10 5 L 0 9 z" fill="#0284c7" />
-          </marker>
-          <marker id="lib-arrow-start" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-            <path d="M 0 1 L 10 5 L 0 9 z" fill="#334155" />
-          </marker>
-        </defs>
+    <svg
+      viewBox="0 0 560 220"
+      className="w-full h-36 bg-slate-50 rounded-xl border border-slate-200 select-none"
+      role="img"
+      aria-label={`Diagrama de ${card.title}`}
+    >
+      <defs>
+        <pattern
+          id={`miniGrid-${card.id}`}
+          width="20"
+          height="20"
+          patternUnits="userSpaceOnUse"
+        >
+          <path
+            d="M 20 0 L 0 0 0 20"
+            fill="none"
+            stroke="#e2e8f0"
+            strokeWidth="0.6"
+          />
+        </pattern>
+        <marker
+          id={`miniPink-${card.id}`}
+          viewBox="0 0 10 10"
+          refX="8.5"
+          refY="5"
+          markerWidth="5.5"
+          markerHeight="5.5"
+          orient="auto-start-reverse"
+        >
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#F04E98" />
+        </marker>
+        <marker
+          id={`miniBlue-${card.id}`}
+          viewBox="0 0 10 10"
+          refX="8.5"
+          refY="5"
+          markerWidth="5.5"
+          markerHeight="5.5"
+          orient="auto-start-reverse"
+        >
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#005EB8" />
+        </marker>
+        <marker
+          id={`miniEmerald-${card.id}`}
+          viewBox="0 0 10 10"
+          refX="8.5"
+          refY="5"
+          markerWidth="5.5"
+          markerHeight="5.5"
+          orient="auto-start-reverse"
+        >
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#10b981" />
+        </marker>
+        <marker
+          id={`miniStart-${card.id}`}
+          viewBox="0 0 10 10"
+          refX="8.5"
+          refY="5"
+          markerWidth="5"
+          markerHeight="5"
+          orient="auto"
+        >
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#0f172a" />
+        </marker>
+      </defs>
 
-        {/* Start arrow */}
-        {pattern.nodes
-          .filter((n) => n.isStart)
-          .map((n) => (
-            <g key={`start-${n.id}`}>
-              <line
-                x1={Math.max(8, n.x - 48)}
-                y1={n.y}
-                x2={n.x - 23}
-                y2={n.y}
-                stroke="#334155"
-                strokeWidth="2"
-                markerEnd="url(#lib-arrow-start)"
-              />
-            </g>
-          ))}
+      <rect
+        x="4"
+        y="4"
+        width="552"
+        height="212"
+        rx="12"
+        fill={`url(#miniGrid-${card.id})`}
+      />
 
-        {/* Edges */}
-        {pattern.edges.map((edge, idx) => {
-          const from = nodeMap[edge.from];
-          const to = nodeMap[edge.to];
-          const isWalk = edge.kind === 'walk';
-          const color = isWalk ? '#0284c7' : '#ea580c';
-          const marker = isWalk ? 'url(#lib-arrow-walk)' : 'url(#lib-arrow-train)';
+      {/* Entry arrow to first node */}
+      {card.nodes.length > 0 && (
+        <line
+          x1={Math.max(8, card.nodes[0].x - 48)}
+          y1={card.nodes[0].y}
+          x2={card.nodes[0].x - 24}
+          y2={card.nodes[0].y}
+          stroke="#0f172a"
+          strokeWidth="2.5"
+          markerEnd={`url(#miniStart-${card.id})`}
+        />
+      )}
 
-          if (edge.curve === 'top') {
-            const mx = (from.x + to.x) / 2;
-            return (
-              <g key={idx}>
-                <path
-                  d={`M ${from.x} ${from.y - 20} C ${from.x} ${from.y - 82}, ${to.x} ${to.y - 82}, ${to.x} ${to.y - 23}`}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth="2.5"
-                  strokeDasharray={isWalk ? '5 4' : undefined}
-                  markerEnd={marker}
-                />
-                <rect x={mx - 11} y={from.y - 78} width="22" height="18" rx="4" fill="#f0f9ff" stroke="#7dd3fc" />
-                <text x={mx} y={from.y - 65} textAnchor="middle" className="fill-sky-800 text-[12px] font-mono font-semibold">
-                  {edge.label}
-                </text>
-              </g>
-            );
-          }
+      {/* Edges */}
+      {card.edges.map((e, idx) => {
+        const from = card.nodes.find((n) => n.id === e.from);
+        const to = card.nodes.find((n) => n.id === e.to);
+        if (!from || !to) return null;
 
-          if (edge.curve === 'bottom') {
-            const mx = (from.x + to.x) / 2;
-            return (
-              <g key={idx}>
-                <path
-                  d={`M ${from.x} ${from.y + 20} C ${from.x + 30} ${from.y + 92}, ${to.x - 30} ${to.y + 92}, ${to.x} ${to.y + 23}`}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth="2.5"
-                  strokeDasharray={isWalk ? '5 4' : undefined}
-                  markerEnd={marker}
-                />
-                <rect x={mx - 11} y={from.y + 62} width="22" height="18" rx="4" fill="#f0f9ff" stroke="#7dd3fc" />
-                <text x={mx} y={from.y + 75} textAnchor="middle" className="fill-sky-800 text-[12px] font-mono font-semibold">
-                  {edge.label}
-                </text>
-              </g>
-            );
-          }
+        const stroke = getStroke(e.label);
+        const dash = e.label === 'ε' ? '5,3' : undefined;
 
-          // Straight or diagonal
-          const dx = to.x - from.x;
-          const dy = to.y - from.y;
-          const len = Math.hypot(dx, dy) || 1;
-          const ux = dx / len;
-          const uy = dy / len;
-          const x1 = from.x + ux * 20;
-          const y1 = from.y + uy * 20;
-          const x2 = to.x - ux * 23;
-          const y2 = to.y - uy * 23;
-          const mx = (x1 + x2) / 2;
-          const my = (y1 + y2) / 2 - 12;
-
+        if (e.curve === 'top') {
+          const startX = from.x;
+          const startY = from.y - 21;
+          const endX = to.x;
+          const endY = to.y - 21;
+          const midX = (startX + endX) / 2;
+          const ctrlY = 18;
+          const d = `M ${startX} ${startY} Q ${midX} ${ctrlY} ${endX} ${endY}`;
+          const labelY = 0.25 * startY + 0.5 * ctrlY + 0.25 * endY;
           return (
             <g key={idx}>
-              <line
-                x1={x1}
-                y1={y1}
-                x2={x2}
-                y2={y2}
-                stroke={color}
-                strokeWidth="2.5"
-                strokeDasharray={isWalk ? '5 4' : undefined}
-                markerEnd={marker}
+              <path d={d} fill="none" stroke="#ffffff" strokeWidth="5.5" opacity="0.9" />
+              <path
+                d={d}
+                fill="none"
+                stroke={stroke}
+                strokeWidth="2.6"
+                strokeDasharray={dash}
+                markerEnd={getMarker(e.label)}
               />
-              <rect
-                x={mx - 10}
-                y={my - 9}
-                width="20"
-                height="18"
-                rx="4"
-                fill={isWalk ? '#f0f9ff' : '#fff7ed'}
-                stroke={isWalk ? '#7dd3fc' : '#fdba74'}
-              />
-              <text
-                x={mx}
-                y={my + 4}
-                textAnchor="middle"
-                className={`text-[12px] font-mono font-semibold ${isWalk ? 'fill-sky-800' : 'fill-orange-800'}`}
-              >
-                {edge.label}
-              </text>
+              <g transform={`translate(${midX}, ${labelY})`}>
+                <rect
+                  x="-12"
+                  y="-9"
+                  width="24"
+                  height="17"
+                  rx="4.5"
+                  fill="#ffffff"
+                  stroke={stroke}
+                  strokeWidth="1.3"
+                />
+                <text
+                  x="0"
+                  y="3.5"
+                  textAnchor="middle"
+                  fill={stroke}
+                  fontSize="10"
+                  fontWeight="900"
+                >
+                  {e.label}
+                </text>
+              </g>
             </g>
           );
-        })}
+        }
 
-        {/* Nodes */}
-        {pattern.nodes.map((node) => (
-          <g key={node.id} transform={`translate(${node.x}, ${node.y})`}>
-            {node.isAccept && (
+        if (e.curve === 'bottom') {
+          const startX = from.x;
+          const startY = from.y + 21;
+          const endX = to.x;
+          const endY = to.y + 21;
+          const midX = (startX + endX) / 2;
+          const ctrlY = 202;
+          const d = `M ${startX} ${startY} Q ${midX} ${ctrlY} ${endX} ${endY}`;
+          const labelY = 0.25 * startY + 0.5 * ctrlY + 0.25 * endY;
+          return (
+            <g key={idx}>
+              <path d={d} fill="none" stroke="#ffffff" strokeWidth="5.5" opacity="0.9" />
+              <path
+                d={d}
+                fill="none"
+                stroke={stroke}
+                strokeWidth="2.6"
+                strokeDasharray={dash}
+                markerEnd={getMarker(e.label)}
+              />
+              <g transform={`translate(${midX}, ${labelY})`}>
+                <rect
+                  x="-12"
+                  y="-9"
+                  width="24"
+                  height="17"
+                  rx="4.5"
+                  fill="#ffffff"
+                  stroke={stroke}
+                  strokeWidth="1.3"
+                />
+                <text
+                  x="0"
+                  y="3.5"
+                  textAnchor="middle"
+                  fill={stroke}
+                  fontSize="10"
+                  fontWeight="900"
+                >
+                  {e.label}
+                </text>
+              </g>
+            </g>
+          );
+        }
+
+        // Straight segment clipped cleanly to 38x38 mini station plaque
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len;
+        const uy = dy / len;
+        const x1 = from.x + ux * 21;
+        const y1 = from.y + uy * 21;
+        const x2 = to.x - ux * 24;
+        const y2 = to.y - uy * 24;
+        const midX = (x1 + x2) / 2;
+        const midY = (y1 + y2) / 2;
+
+        return (
+          <g key={idx}>
+            <line
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              stroke="#ffffff"
+              strokeWidth="6"
+              strokeLinecap="round"
+            />
+            <line
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              stroke={stroke}
+              strokeWidth="2.8"
+              strokeDasharray={dash}
+              markerEnd={getMarker(e.label)}
+            />
+            <rect
+              x={midX - 11}
+              y={midY - 20}
+              width="22"
+              height="16"
+              rx="4.5"
+              fill="#ffffff"
+              stroke={stroke}
+              strokeWidth="1.3"
+            />
+            <text
+              x={midX}
+              y={midY - 9}
+              textAnchor="middle"
+              fill={stroke}
+              fontSize="10"
+              fontWeight="900"
+            >
+              {e.label}
+            </text>
+          </g>
+        );
+      })}
+
+      {/* Nodes with Official STC Metro Pictograms */}
+      {card.nodes.map((n) => {
+        const spec = getStationVisualSpec(n.id);
+        return (
+          <g key={n.id}>
+            {n.isAccept && (
               <rect
-                x="-23"
-                y="-23"
+                x={n.x - 23}
+                y={n.y - 23}
                 width="46"
                 height="46"
                 rx="11"
                 fill="none"
-                stroke="#059669"
-                strokeWidth="2"
+                stroke="#10b981"
+                strokeWidth="2.2"
+                strokeDasharray="4,2"
               />
             )}
             <rect
-              x="-18"
-              y="-18"
-              width="36"
-              height="36"
-              rx="8"
-              fill={node.isAccept ? '#ecfdf5' : '#ffffff'}
-              stroke={node.isAccept ? '#059669' : '#1e293b'}
+              x={n.x - 19}
+              y={n.y - 19}
+              width="38"
+              height="38"
+              rx="9"
+              fill={spec.primaryColor}
+              stroke="#0f172a"
               strokeWidth="2"
             />
+            <g transform={`translate(${n.x}, ${n.y - 1}) scale(0.84)`}>
+              <CdmxStationGlyphSvg
+                glyphId={spec.glyphId}
+                memberGlyphs={spec.memberGlyphs}
+                color="#ffffff"
+              />
+            </g>
+            {/* Mini state ID badge in bottom-right corner */}
+            <rect
+              x={n.x + 5}
+              y={n.y + 5}
+              width="15"
+              height="14"
+              rx="3.5"
+              fill="#0f172a"
+              stroke="#ffffff"
+              strokeWidth="1"
+            />
             <text
-              x="0"
-              y="5"
+              x={n.x + 12.5}
+              y={n.y + 14.5}
               textAnchor="middle"
-              className={`font-display text-[15px] font-bold ${
-                node.isAccept ? 'fill-emerald-900' : 'fill-slate-900'
-              }`}
+              fill="#ffffff"
+              fontSize="8.5"
+              fontWeight="900"
+              fontFamily="monospace"
             >
-              {node.id}
+              {n.id}
             </text>
           </g>
-        ))}
-      </svg>
-    </div>
+        );
+      })}
+    </svg>
   );
 };
 
-export const RegexLibrarySection: React.FC = () => {
-  const [selectedId, setSelectedId] = useState<RegexPatternId>('exercise');
-  const [flowStep, setFlowStep] = useState<1 | 2 | 3>(1);
+export const RegexLibrarySection: React.FC<RegexLibrarySectionProps> = ({
+  selectedCardId,
+  onSelectCard,
+}) => {
+  const [internalSelectedId, setInternalSelectedId] = useState<string>('exercise');
+  const activeId = selectedCardId ?? internalSelectedId;
+  const activeCard =
+    REGEX_LIBRARY.find((c) => c.id === activeId) || REGEX_LIBRARY[0];
 
-  const active = REGEX_LIBRARY.find((p) => p.id === selectedId)!;
+  const handleSelect = (id: string) => {
+    setInternalSelectedId(id);
+    onSelectCard?.(id);
+  };
 
   return (
-    <section className="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-        <div>
-          <div className="text-xs font-medium text-slate-500 flex items-center gap-1.5">
-            <Layers className="w-3.5 h-3.5 text-orange-600" />
-            <span>Paso 0 · Biblioteca de Expresiones Regulares</span>
-          </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1 text-balance">
-            ¿Cómo saber qué diagrama dibujar según el tipo de expresión regular?
-          </h2>
-          <p className="text-sm text-slate-600 mt-1 max-w-3xl">
-            Antes de llenar tablas, aprende a diferenciar los 5 bloques base y cómo se traducen primero a un mapa con
-            pasillos <span className="font-mono font-semibold">ε</span> y después a una tabla.
-          </p>
-        </div>
-
-        {/* 3-Step Pipeline Indicator */}
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg self-start shrink-0">
-          {[
-            { step: 1 as const, label: '1. Leer ER' },
-            { step: 2 as const, label: '2. Dibujar Mapa' },
-            { step: 3 as const, label: '3. Pasar a Tabla' },
-          ].map((item) => (
-            <button
-              key={item.step}
-              onClick={() => {
-                setFlowStep(item.step);
-                metroAudio.playTicketClick();
-              }}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
-                flowStep === item.step
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Pattern Selector Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-        {REGEX_LIBRARY.map((item) => {
-          const isCurrent = item.id === selectedId;
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {REGEX_LIBRARY.map((card) => {
+          const isSelected = card.id === activeCard.id;
           return (
             <button
-              key={item.id}
-              onClick={() => {
-                setSelectedId(item.id);
-                metroAudio.playTicketClick();
-              }}
-              className={`text-left p-3 rounded-lg border transition-colors ${
-                isCurrent
-                  ? 'bg-slate-900 text-white border-slate-900'
-                  : 'bg-slate-50 text-slate-800 border-slate-200 hover:bg-orange-50 hover:border-orange-200'
+              key={card.id}
+              onClick={() => handleSelect(card.id)}
+              className={`text-left p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                isSelected
+                  ? 'bg-orange-50/90 border-[#FF6B00] shadow-md ring-2 ring-[#FF6B00]/20'
+                  : 'bg-white border-slate-200 hover:border-slate-300'
               }`}
             >
-              <div className={`text-[11px] ${isCurrent ? 'text-orange-300' : 'text-slate-500'}`}>
-                {item.tag}
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-900 text-white font-mono">
+                  ER = {card.expression}
+                </span>
+                <span className="text-[10px] font-bold text-[#FF6B00]">
+                  {card.tag}
+                </span>
               </div>
-              <div className="font-mono text-base font-bold mt-0.5">{item.expression}</div>
-              <div className={`text-xs mt-0.5 truncate ${isCurrent ? 'text-slate-200' : 'text-slate-600'}`}>
-                {item.title.split('(')[0].trim()}
+              <div className="text-xs font-black text-slate-900 mb-2">
+                {card.title}
               </div>
+              <MiniRegexDiagram card={card} />
+              <p className="text-[11px] text-slate-600 mt-2 leading-relaxed">
+                {card.metroAnalogy}
+              </p>
             </button>
           );
         })}
       </div>
 
-      {/* Visual ER -> Diagram -> Table Pipeline with Arrows */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Step 1: How to spot and differentiate */}
-        <div
-          className={`lg:col-span-4 rounded-xl border p-4 space-y-3 transition-colors ${
-            flowStep === 1 ? 'border-orange-400 bg-orange-50/40' : 'border-slate-200 bg-slate-50'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-orange-800">Paso 1 · Cómo reconocer la ER</span>
-            <ArrowRight className="w-4 h-4 text-slate-400 hidden lg:block" />
+      {/* Detailed card breakdown */}
+      <div className="p-4 rounded-2xl bg-slate-900 text-white border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-md bg-[#FF6B00] text-white text-[10px] font-black uppercase tracking-wider">
+              Regla de Construcción de Thompson
+            </span>
+            <span className="text-xs font-mono text-orange-300 font-bold">
+              {activeCard.title} ({activeCard.expression})
+            </span>
           </div>
-          <div>
-            <div className="font-mono text-2xl font-bold text-slate-900">{active.expression}</div>
-            <div className="text-sm font-semibold text-slate-800 mt-0.5">{active.title}</div>
-          </div>
-          <p className="text-xs text-slate-700 leading-relaxed">
-            <strong className="text-slate-900">Pista visual:</strong> {active.howToSpot}
-          </p>
-          <p className="text-xs text-slate-700 leading-relaxed">
-            <strong className="text-slate-900">En el Metro:</strong> {active.metroAnalogy}
-          </p>
-          <div className="bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-700">
-            <span className="font-semibold text-slate-900">Diferencia clave: </span>
-            {active.differenceHighlight}
-          </div>
-          <div className="flex flex-wrap gap-3 pt-1 text-xs">
-            <div>
-              <span className="font-semibold text-emerald-800">Acepta: </span>
-              <span className="font-mono text-slate-800">{active.validExamples.join(', ')}</span>
-            </div>
-            <div>
-              <span className="font-semibold text-rose-800">Rechaza: </span>
-              <span className="font-mono text-slate-800">{active.invalidExamples.join(', ')}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Step 2: Diagram */}
-        <div
-          className={`lg:col-span-5 rounded-xl border p-4 space-y-3 transition-colors ${
-            flowStep === 2 ? 'border-orange-400 bg-orange-50/40' : 'border-slate-200 bg-white'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-sky-800">Paso 2 · De ER a Diagrama AFN-ε</span>
-            <ArrowRight className="w-4 h-4 text-slate-400 hidden lg:block" />
-          </div>
-          <MiniRegexDiagram pattern={active} />
-          <p className="text-xs text-slate-700 leading-relaxed">
-            <strong className="text-slate-900">Regla de dibujo:</strong> {active.diagramRule}
+          <p className="text-xs text-slate-300 leading-relaxed">
+            {activeCard.diagramRule}
           </p>
         </div>
-
-        {/* Step 3: Table */}
-        <div
-          className={`lg:col-span-3 rounded-xl border p-4 space-y-3 transition-colors ${
-            flowStep === 3 ? 'border-orange-400 bg-orange-50/40' : 'border-slate-200 bg-slate-50'
-          }`}
-        >
-          <div className="text-xs font-semibold text-emerald-800 flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Paso 3 · De Diagrama a Tabla</span>
-          </div>
-
-          <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white">
-            <table className="w-full text-left border-collapse text-xs tabular-nums font-mono">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-sans">
-                  <th className="py-1.5 px-2 font-semibold">Edo</th>
-                  <th className="py-1.5 px-2 font-semibold">a</th>
-                  <th className="py-1.5 px-2 font-semibold">b</th>
-                  <th className="py-1.5 px-2 font-semibold text-sky-700">ε</th>
-                  <th className="py-1.5 px-2 font-semibold">EF</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {active.tableRows.map((r) => (
-                  <tr key={r.state}>
-                    <td className="py-1.5 px-2 font-semibold text-slate-900">{r.state}</td>
-                    <td className="py-1.5 px-2 text-orange-800">{r.onA}</td>
-                    <td className="py-1.5 px-2 text-orange-800">{r.onB}</td>
-                    <td className="py-1.5 px-2 text-sky-700">{r.onEps}</td>
-                    <td className={`py-1.5 px-2 font-semibold ${r.ef.includes('1') ? 'text-emerald-700' : 'text-slate-400'}`}>
-                      {r.ef}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <p className="text-xs text-slate-700 leading-relaxed">
-            <strong className="text-slate-900">Cómo leerla:</strong> {active.tableRule}
-          </p>
+        <div className="shrink-0 px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-700 text-[11px] text-emerald-300 font-mono">
+          En <strong className="text-white">(ab)a*</strong>: A→B→C aplica{' '}
+          <strong className="text-pink-400">Concatenación</strong> y C→D→E→F aplica{' '}
+          <strong className="text-emerald-400">Cerradura a*</strong>
         </div>
       </div>
-    </section>
+    </div>
   );
 };

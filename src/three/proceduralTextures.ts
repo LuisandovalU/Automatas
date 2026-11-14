@@ -10,8 +10,23 @@ function drawOfficialStationGlyph(
   cx: number,
   cy: number,
   size: number,
-  color: string
+  color: string,
+  memberGlyphs?: StationVisualSpec['memberGlyphs']
 ) {
+  if (memberGlyphs && memberGlyphs.length === 2) {
+    const r = size * 0.42;
+    drawOfficialStationGlyph(ctx, memberGlyphs[0], cx - r * 0.48, cy, size * 0.48, color);
+    drawOfficialStationGlyph(ctx, memberGlyphs[1], cx + r * 0.48, cy, size * 0.48, color);
+    return;
+  }
+  if (memberGlyphs && memberGlyphs.length >= 3) {
+    const r = size * 0.42;
+    drawOfficialStationGlyph(ctx, memberGlyphs[0], cx - r * 0.48, cy - r * 0.42, size * 0.44, color);
+    drawOfficialStationGlyph(ctx, memberGlyphs[1], cx + r * 0.48, cy - r * 0.42, size * 0.44, color);
+    drawOfficialStationGlyph(ctx, memberGlyphs[2], cx, cy + r * 0.46, size * 0.48, color);
+    return;
+  }
+
   ctx.save();
   ctx.translate(cx, cy);
   ctx.fillStyle = color;
@@ -187,6 +202,107 @@ function drawOfficialStationGlyph(
       break;
     }
 
+    case 'bellas_artes': {
+      // Neoclassical dome + 4 columns + base
+      ctx.beginPath();
+      ctx.arc(0, -r * 0.12, r * 0.68, Math.PI, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, -r * 0.86, r * 0.12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillRect(-r * 0.85, -r * 0.12, r * 1.7, r * 0.18);
+      [-0.72, -0.28, 0.16, 0.56].forEach((xCol) => {
+        ctx.fillRect(xCol * r, r * 0.06, r * 0.18, r * 0.58);
+      });
+      ctx.fillRect(-r * 0.92, r * 0.64, r * 1.84, r * 0.2);
+      break;
+    }
+
+    case 'balderas': {
+      // Artillery cannon + spoked wheel
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.88, -r * 0.32);
+      ctx.lineTo(r * 0.78, -r * 0.64);
+      ctx.lineTo(r * 0.84, -r * 0.3);
+      ctx.lineTo(-r * 0.82, -r * 0.02);
+      ctx.closePath();
+      ctx.fill();
+      ctx.lineWidth = Math.max(4, r * 0.18);
+      ctx.beginPath();
+      ctx.arc(-r * 0.06, r * 0.36, r * 0.42, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(-r * 0.06, r * 0.36, r * 0.14, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+
+    case 'insurgentes': {
+      // Campana de Dolores bell
+      ctx.fillRect(-r * 0.42, -r * 0.86, r * 0.84, r * 0.22);
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.46, -r * 0.52);
+      ctx.quadraticCurveTo(-r * 0.55, r * 0.2, -r * 0.88, r * 0.58);
+      ctx.lineTo(r * 0.88, r * 0.58);
+      ctx.quadraticCurveTo(r * 0.55, r * 0.2, r * 0.46, -r * 0.52);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, r * 0.74, r * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+
+    case 'universidad': {
+      // Shield crest
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.74, -r * 0.75);
+      ctx.lineTo(r * 0.74, -r * 0.75);
+      ctx.quadraticCurveTo(r * 0.7, r * 0.45, 0, r * 0.86);
+      ctx.quadraticCurveTo(-r * 0.7, r * 0.45, -r * 0.74, -r * 0.75);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+
+    case 'salto_del_agua': {
+      // Colonial fountain & water jets
+      ctx.lineWidth = Math.max(3, r * 0.15);
+      ctx.beginPath();
+      ctx.moveTo(0, -r * 0.2);
+      ctx.quadraticCurveTo(-r * 0.45, -r * 0.82, -r * 0.82, -r * 0.36);
+      ctx.moveTo(0, -r * 0.2);
+      ctx.quadraticCurveTo(r * 0.45, -r * 0.82, r * 0.82, -r * 0.36);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.86, -r * 0.06);
+      ctx.lineTo(r * 0.86, -r * 0.06);
+      ctx.lineTo(r * 0.62, r * 0.36);
+      ctx.lineTo(-r * 0.62, r * 0.36);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillRect(-r * 0.26, r * 0.36, r * 0.52, r * 0.32);
+      ctx.fillRect(-r * 0.68, r * 0.68, r * 1.36, r * 0.2);
+      break;
+    }
+
+    case 'san_lazaro': {
+      // Steam locomotive front
+      ctx.fillRect(-r * 0.2, -r * 0.88, r * 0.4, r * 0.45);
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.52, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.56, r * 0.45);
+      ctx.lineTo(r * 0.56, r * 0.45);
+      ctx.lineTo(r * 0.82, r * 0.85);
+      ctx.lineTo(-r * 0.82, r * 0.85);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+
     case 'deadend': {
       ctx.lineWidth = Math.max(5, r * 0.24);
       ctx.beginPath();
@@ -339,7 +455,7 @@ export function createStationSignTexture(
   fillMultiLineTile(ctx, 22, 48, 152, 152, 22, lineColors);
 
   // Crisp full-contrast white official Lance Wyman pictogram inside tile
-  drawOfficialStationGlyph(ctx, spec.glyphId, 98, 122, 114, '#ffffff');
+  drawOfficialStationGlyph(ctx, spec.glyphId, 98, 122, 114, '#ffffff', spec.memberGlyphs);
 
   // Corner Automata State Badge (e.g. A, B, C...) so it complements without obscuring the official logo
   ctx.fillStyle = '#09090b';
@@ -454,7 +570,7 @@ export function createMetroTotemTexture(
 
   // Station official pictogram box in line colors
   fillMultiLineTile(ctx, 22, 206, 148, 148, 20, lineColors);
-  drawOfficialStationGlyph(ctx, spec.glyphId, 96, 280, 108, '#ffffff');
+  drawOfficialStationGlyph(ctx, spec.glyphId, 96, 280, 108, '#ffffff', spec.memberGlyphs);
 
   // Official Line badges row at bottom
   const totalW = spec.lines.length * 34 + Math.max(0, spec.lines.length - 1) * 6;

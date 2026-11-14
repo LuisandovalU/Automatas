@@ -784,9 +784,9 @@ export default function App() {
                 return (
                   <div className="pt-1.5 border-t border-slate-800/90 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <svg width="22" height="22" viewBox="-18 -18 36 36" className="shrink-0 rounded bg-slate-800 p-0.5">
-                        <g transform="scale(0.85)">
-                          <CdmxStationGlyphSvg glyphId={spec.glyphId} color="#ffffff" />
+                      <svg width="24" height="24" viewBox="-18 -18 36 36" className="shrink-0 rounded bg-slate-800 p-0.5" style={{ backgroundColor: spec.primaryColor }}>
+                        <g transform="scale(0.88)">
+                          <CdmxStationGlyphSvg glyphId={spec.glyphId} memberGlyphs={spec.memberGlyphs} color="#ffffff" />
                         </g>
                       </svg>
                       <span className="text-[11px] font-medium text-slate-200 truncate">
@@ -940,7 +940,7 @@ export default function App() {
                         className="shrink-0 rounded-lg p-1 border border-white/20"
                         style={{ backgroundColor: spec.primaryColor }}
                       >
-                        <CdmxStationGlyphSvg glyphId={spec.glyphId} color="#ffffff" />
+                        <CdmxStationGlyphSvg glyphId={spec.glyphId} memberGlyphs={spec.memberGlyphs} color="#ffffff" />
                       </svg>
                       <div>
                         <div className="text-xs font-mono text-orange-300 font-bold">

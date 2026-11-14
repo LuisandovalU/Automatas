@@ -214,6 +214,10 @@ function getMetroTitleForState(specId: string, stateId: string, index: number): 
   if (specId === 'a2-ab-astar' && stateId in NFA_STATIONS) {
     return NFA_STATIONS[stateId as keyof typeof NFA_STATIONS].metroName;
   }
+  const spec = getStationVisualSpec(stateId);
+  if (spec && spec.officialName && !spec.officialName.startsWith('Estación ')) {
+    return spec.officialName.split('/')[0].trim();
+  }
   return CDMX_FALLBACK_STATIONS[index % CDMX_FALLBACK_STATIONS.length];
 }
 
@@ -971,8 +975,8 @@ function computeNfaLayout(
   const maxRank = Math.max(...Array.from(byRank.keys()), 0);
   const maxPerRank = Math.max(...Array.from(byRank.values()).map((v) => v.length), 1);
 
-  const width = Math.max(760, 180 + (maxRank + 1) * 145);
-  const height = Math.max(330, 150 + maxPerRank * 105);
+  const width = Math.max(820, 210 + (maxRank + 1) * 155);
+  const height = Math.max(360, 190 + maxPerRank * 115);
 
   const nodes: LayoutNode2D[] = [];
   const nodePos = new Map<string, { x: number; y: number }>();
@@ -983,12 +987,12 @@ function computeNfaLayout(
     const x =
       sortedRanks.length === 1
         ? width / 2
-        : 95 + (rIdx / Math.max(1, sortedRanks.length - 1)) * (width - 190);
+        : 105 + (rIdx / Math.max(1, sortedRanks.length - 1)) * (width - 210);
     group.forEach((stId, idx) => {
       const y =
         group.length === 1
           ? height / 2
-          : height / 2 + (idx - (group.length - 1) / 2) * 105;
+          : height / 2 + (idx - (group.length - 1) / 2) * 115;
       nodePos.set(stId, { x, y });
       stations[stId].x = x;
       stations[stId].y = y;
@@ -1006,16 +1010,21 @@ function computeNfaLayout(
   const edges: LayoutEdge2D[] = spec.transitions.map((tr) => {
     const pFrom = nodePos.get(tr.from)!;
     const pTo = nodePos.get(tr.to)!;
+    const span = Math.abs(pTo.x - pFrom.x);
     let curve: LayoutEdge2D['curve'] = 'straight';
+    let curveOffset = 0;
+
     if (tr.from === tr.to) {
       curve = 'self';
     } else if (pFrom.x > pTo.x) {
       curve = 'top';
+      curveOffset = Math.min(115, 62 + span * 0.14);
     } else if (
-      Math.abs(pFrom.y - pTo.y) < 12 &&
-      Math.abs(pFrom.x - pTo.x) > 190
+      Math.abs(pFrom.y - pTo.y) < 18 &&
+      span > 170
     ) {
       curve = 'bottom';
+      curveOffset = Math.min(120, 68 + span * 0.14);
     }
     return {
       id: tr.id,
@@ -1025,6 +1034,7 @@ function computeNfaLayout(
       label: tr.label,
       kind: tr.kind,
       curve,
+      curveOffset,
     };
   });
 
@@ -1050,19 +1060,61 @@ function computeDfaLayout(
       };
     });
     const edges = buildGroupedDfaEdges(spec.alphabet, dfaOrder, dfaRows, nodes);
-    return { width: 900, height: 470, nodes, edges };
+    return { width: 920, height: 490, nodes, edges };
   }
 
-  const width = 920;
-  const height = 480;
+  const width = 940;
+  const height = 500;
   const nonDead = dfaOrder.filter((id) => !dfaRows[id].isDeadEnd);
   const dead = dfaOrder.find((id) => dfaRows[id].isDeadEnd);
 
   const nodes: LayoutNode2D[] = [];
   if (nonDead.length <= 2) {
     nonDead.forEach((id, idx) => {
-      const x = nonDead.length === 1 ? 360 : 240 + idx * 340;
-      const y = dead ? 165 : 230;
+      const x = nonDead.length === 1 ? 470 : 250 + idx * 420;
+      const y = dead ? 160 : 245;
+      dfaRows[id].x = x;
+      dfaRows[id].y = y;
+      nodes.push({
+        id,
+        x,
+        y,
+        isStart: dfaRows[id].isStart,
+        isAccept: dfaRows[id].ef === '1',
+        isDeadEnd: false,
+        subtitle: dfaRows[id].subtitle,
+      });
+    });
+  } else if (nonDead.length === 3) {
+    const coords = [
+      { x: 205, y: dead ? 155 : 255 },
+      { x: 470, y: dead ? 115 : 145 },
+      { x: 735, y: dead ? 155 : 255 },
+    ];
+    nonDead.forEach((id, idx) => {
+      const { x, y } = coords[idx];
+      dfaRows[id].x = x;
+      dfaRows[id].y = y;
+      nodes.push({
+        id,
+        x,
+        y,
+        isStart: dfaRows[id].isStart,
+        isAccept: dfaRows[id].ef === '1',
+        isDeadEnd: false,
+        subtitle: dfaRows[id].subtitle,
+      });
+    });
+  } else if (nonDead.length === 4 && dead) {
+    // Classic 4-corner stadium around central trap state [∅] (like Slide 4)
+    const coords = [
+      { x: 250, y: 120 },
+      { x: 690, y: 120 },
+      { x: 720, y: 380 },
+      { x: 220, y: 380 },
+    ];
+    nonDead.forEach((id, idx) => {
+      const { x, y } = coords[idx];
       dfaRows[id].x = x;
       dfaRows[id].y = y;
       nodes.push({
@@ -1076,11 +1128,11 @@ function computeDfaLayout(
       });
     });
   } else {
-    // Arrange non-dead states neatly on an ellipse / arc starting from left-top
-    const cx = 455;
-    const cy = dead ? 195 : 235;
-    const rx = Math.min(315, 195 + nonDead.length * 24);
-    const ry = dead ? 125 : 150;
+    // Arrange non-dead states on a well-proportioned stadium ellipse
+    const cx = 470;
+    const cy = dead ? 210 : 250;
+    const rx = Math.min(340, 220 + nonDead.length * 24);
+    const ry = dead ? 135 : 165;
     nonDead.forEach((id, idx) => {
       const angle = Math.PI + (idx / nonDead.length) * Math.PI * 2;
       const x = Math.round(cx + Math.cos(angle) * rx);
@@ -1100,8 +1152,8 @@ function computeDfaLayout(
   }
 
   if (dead) {
-    const x = 455;
-    const y = 395;
+    const x = 470;
+    const y = nonDead.length === 4 ? 250 : 405;
     dfaRows[dead].x = x;
     dfaRows[dead].y = y;
     nodes.push({
@@ -1117,6 +1169,28 @@ function computeDfaLayout(
 
   const edges = buildGroupedDfaEdges(spec.alphabet, dfaOrder, dfaRows, nodes);
   return { width, height, nodes, edges };
+}
+
+function pointToSegmentDist(
+  px: number,
+  py: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
+): { dist: number; side: number } {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-4) return { dist: Math.hypot(px - x1, py - y1), side: 1 };
+  const t = Math.max(0.12, Math.min(0.88, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+  const cross = dx * (py - y1) - dy * (px - x1);
+  return {
+    dist: Math.hypot(px - projX, py - projY),
+    side: cross >= 0 ? 1 : -1,
+  };
 }
 
 function buildGroupedDfaEdges(
@@ -1147,11 +1221,29 @@ function buildGroupedDfaEdges(
 
     const fromNode = nodes.find((n) => n.id === entry.from);
     const toNode = nodes.find((n) => n.id === entry.to);
-    let curveOffset = hasReverse ? 42 : 0;
-    if (fromNode && toNode && !hasReverse && entry.from !== entry.to) {
-      // Slightly curve long chords that pass near center
-      const dist = Math.hypot(toNode.x - fromNode.x, toNode.y - fromNode.y);
-      if (dist > 480) curveOffset = 34;
+    let curveOffset = hasReverse ? 44 : 0;
+
+    if (fromNode && toNode && entry.from !== entry.to) {
+      // Check if segment passes close to any intermediate station box; if so, bend cleanly around it
+      for (const other of nodes) {
+        if (other.id === entry.from || other.id === entry.to) continue;
+        const { dist, side } = pointToSegmentDist(
+          other.x,
+          other.y,
+          fromNode.x,
+          fromNode.y,
+          toNode.x,
+          toNode.y
+        );
+        if (dist < 76) {
+          curveOffset = -side * Math.max(58, Math.abs(curveOffset));
+          break;
+        }
+      }
+      const span = Math.hypot(toNode.x - fromNode.x, toNode.y - fromNode.y);
+      if (curveOffset === 0 && span > 460) {
+        curveOffset = fromNode.y <= toNode.y ? 36 : -36;
+      }
     }
 
     edges.push({
