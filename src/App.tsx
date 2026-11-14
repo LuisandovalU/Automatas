@@ -28,6 +28,8 @@ import {
   stepNfaStates,
 } from './engine/automataMethodEngine';
 import { CdmxStationGlyphSvg } from './components/CdmxStationGlyphSvg';
+import { MetroMapDFA } from './components/MetroMapDFA';
+import { MetroMapNFA } from './components/MetroMapNFA';
 import { NotebookTab, StudyNotebookModal } from './components/StudyNotebookModal';
 import { metroAudio } from './utils/metroAudio';
 
@@ -109,6 +111,7 @@ export default function App() {
   const [mission, setMission] = useState<MissionId>(1);
   const [expLevel, setExpLevel] = useState<ExplanationLevel>('simple');
   const [dockCollapsed, setDockCollapsed] = useState(false);
+  const [showHudMap, setShowHudMap] = useState(true);
   const [muted, setMuted] = useState(false);
   const [notebookOpen, setNotebookOpen] = useState<NotebookTab | null>(null);
 
@@ -642,6 +645,54 @@ export default function App() {
               cómo pasar de Expresión Regular (<span className="font-mono font-semibold text-amber-300">(ab)a*</span>) a diagrama y tablas con flechas, y domina el <span className="font-mono font-semibold text-emerald-300">AFD</span> al 99%+.
             </p>
 
+            {/* Official STC Metro CDMX Station Pictograms Showcase */}
+            <div className="pt-2 border-t border-slate-800/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-orange-300">
+                  Red Oficial STC Metro CDMX · {activeBundle.spec.title}
+                </span>
+                <span className="text-[10px] font-mono text-emerald-300">
+                  Clic para ir a la estación
+                </span>
+              </div>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                {activeBundle.spec.states.slice(0, 6).map((stId) => {
+                  const spec = getStationVisualSpec(stId);
+                  return (
+                    <button
+                      key={stId}
+                      onClick={() => {
+                        setGameState('PLAYING');
+                        setFocusStationId(stId);
+                        metroAudio.playValidExitChime();
+                      }}
+                      className="flex flex-col items-center gap-1 p-1.5 rounded-xl bg-slate-900/95 border border-slate-700/80 hover:border-orange-400 transition-all cursor-pointer group"
+                      title={`Inspeccionar Estación ${stId} (${spec.officialName})`}
+                    >
+                      <div
+                        className="w-9 h-9 rounded-lg flex items-center justify-center border border-white/25 shadow-sm group-hover:scale-105 transition-transform relative"
+                        style={{ backgroundColor: spec.primaryColor }}
+                      >
+                        <svg width="26" height="26" viewBox="-18 -18 36 36">
+                          <CdmxStationGlyphSvg
+                            glyphId={spec.glyphId}
+                            memberGlyphs={spec.memberGlyphs}
+                            color="#ffffff"
+                          />
+                        </svg>
+                        <span className="absolute -bottom-1 -right-1 px-1 rounded bg-slate-950 text-white text-[9px] font-mono font-black border border-white/40">
+                          {stId}
+                        </span>
+                      </div>
+                      <span className="text-[9.5px] font-bold text-slate-200 truncate w-full text-center">
+                        {spec.officialName.split('·')[0].trim()}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="flex flex-wrap items-center gap-2.5 pt-1">
               <button
                 onClick={() => {
@@ -1034,17 +1085,69 @@ export default function App() {
                 : 'translate(-50%, 0)',
             }}
           >
-            {/* Collapse / Expand Tab */}
-            <div className="flex justify-center">
+            {/* Collapse / Expand Tab + Live 2D Official Map Toggle */}
+            <div className="flex justify-center gap-2">
+              <button
+                onClick={() => {
+                  setShowHudMap((v) => !v);
+                  metroAudio.playTicketClick();
+                }}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-1 rounded-t-lg text-[11px] font-bold border border-b-0 transition-colors cursor-pointer ${
+                  showHudMap
+                    ? 'bg-orange-600 text-white border-orange-400'
+                    : 'text-orange-300 border-slate-700 hover:text-white'
+                }`}
+                style={showHudMap ? undefined : { backgroundColor: 'rgba(15, 23, 42, 0.94)' }}
+              >
+                <span>{showHudMap ? '🗺️ Ocultar Plano Oficial 2D' : '🗺️ Ver Plano Oficial 2D en Vivo'}</span>
+              </button>
               <button
                 onClick={() => setDockCollapsed((c) => !c)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-t-lg text-[11px] font-semibold text-slate-200 border border-b-0 border-slate-700 hover:text-white"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-t-lg text-[11px] font-semibold text-slate-200 border border-b-0 border-slate-700 hover:text-white cursor-pointer"
                 style={{ backgroundColor: 'rgba(15, 23, 42, 0.94)' }}
               >
                 {dockCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                 <span>{dockCollapsed ? 'Mostrar controles (H)' : 'Ocultar controles (H)'}</span>
               </button>
             </div>
+
+            {/* Live Synchronized Official STC Metro 2D Diagram Drawer */}
+            {showHudMap && !dockCollapsed && (
+              <div className="mb-1.5 rounded-xl border border-slate-700 bg-white/95 backdrop-blur-md p-2.5 shadow-2xl">
+                <div className="flex items-center justify-between gap-2 mb-1 px-1">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded bg-slate-900 text-orange-400 text-[10px] font-mono font-bold uppercase">
+                      {mission === 4 ? 'Plano AFD Determinista' : 'Plano AFN-ε Oficial'}
+                    </span>
+                    <span className="text-xs font-bold text-slate-800">
+                      Sincronizado en vivo con el Tren 3D · Haz clic en cualquier estación para inspeccionar
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setNotebookOpen(mission === 4 ? 'sim' : 'er')}
+                    className="text-[11px] font-bold text-orange-600 hover:text-orange-700 underline cursor-pointer"
+                  >
+                    Abrir en pantalla completa →
+                  </button>
+                </div>
+                <div className="max-h-[215px] overflow-y-auto rounded-lg">
+                  {mission === 4 ? (
+                    <MetroMapDFA
+                      bundle={activeBundle}
+                      activeState={dfaState}
+                      onSelectDfaState={(stId) => handleStationClick(stId)}
+                    />
+                  ) : (
+                    <MetroMapNFA
+                      bundle={activeBundle}
+                      activeStates={effectiveNfaStates}
+                      selectedStation={focusStationId ?? undefined}
+                      onSelectStation={(stId) => handleStationClick(stId)}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Dock Body */}
             <div
@@ -1122,22 +1225,41 @@ export default function App() {
                     </span>
                   </div>
 
-                  {/* Quick station inspector pills */}
-                  <div className="flex items-center gap-1 overflow-x-auto max-w-xs sm:max-w-sm">
-                    {activeBundle.spec.states.map((st) => (
-                      <button
-                        key={st}
-                        onClick={() => handleStationClick(st)}
-                        className={`w-7 h-7 rounded-md text-xs font-mono font-bold border transition-colors shrink-0 ${
-                          focusStationId === st
-                            ? 'bg-sky-600 text-white border-sky-400'
-                            : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                        }`}
-                        title={`Inspeccionar estación ${st}`}
-                      >
-                        {st}
-                      </button>
-                    ))}
+                  {/* Quick station inspector pills with Official STC Metro Icons */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto max-w-xs sm:max-w-md py-0.5">
+                    {activeBundle.spec.states.map((st) => {
+                      const stSpec = getStationVisualSpec(st);
+                      const isFocused = focusStationId === st;
+                      const isHere = effectiveNfaStates.includes(st);
+                      return (
+                        <button
+                          key={st}
+                          onClick={() => handleStationClick(st)}
+                          className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-mono font-bold border transition-all shrink-0 cursor-pointer ${
+                            isFocused
+                              ? 'bg-sky-600 text-white border-sky-300 ring-2 ring-sky-400/40'
+                              : isHere
+                              ? 'bg-orange-600/90 text-white border-orange-300'
+                              : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
+                          }`}
+                          title={`Inspeccionar estación ${st}`}
+                        >
+                          <span
+                            className="w-5 h-5 rounded flex items-center justify-center shrink-0 border border-white/25"
+                            style={{ backgroundColor: stSpec.primaryColor }}
+                          >
+                            <svg width="15" height="15" viewBox="-18 -18 36 36">
+                              <CdmxStationGlyphSvg
+                                glyphId={stSpec.glyphId}
+                                memberGlyphs={stSpec.memberGlyphs}
+                                color="#ffffff"
+                              />
+                            </svg>
+                          </span>
+                          <span>{st}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}

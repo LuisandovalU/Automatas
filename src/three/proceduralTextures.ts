@@ -424,8 +424,8 @@ export function createStationSignTexture(
   maxAnisotropy: number
 ): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 256;
+  canvas.width = 768;
+  canvas.height = 384;
   const ctx = canvas.getContext('2d')!;
 
   const spec = getStationVisualSpec(code);
@@ -437,82 +437,88 @@ export function createStationSignTexture(
       : ['#F26522'];
 
   // Dark slate Metro CDMX signage background
-  ctx.fillStyle = variant === 'accept' ? '#052e23' : variant === 'deadend' ? '#3b0714' : '#111827';
-  ctx.fillRect(0, 0, 512, 256);
+  ctx.fillStyle = variant === 'accept' ? '#042f24' : variant === 'deadend' ? '#3b0714' : '#0f172a';
+  ctx.fillRect(0, 0, 768, 384);
 
   // Top multi-line color header band (shows ALL original Metro lines of the station!)
-  const bandW = 512 / lineColors.length;
+  const bandW = 768 / lineColors.length;
   lineColors.forEach((col, i) => {
     ctx.fillStyle = col;
-    ctx.fillRect(i * bandW, 0, bandW + 1, 24);
+    ctx.fillRect(i * bandW, 0, bandW + 1, 34);
   });
 
   // White thin pinstripe under line color band
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 24, 512, 4);
+  ctx.fillRect(0, 34, 768, 6);
 
-  // Left official CDMX Metro rounded-square emblem tile
-  fillMultiLineTile(ctx, 22, 48, 152, 152, 22, lineColors);
+  // Left official CDMX Metro rounded-square emblem tile (Extra large & high contrast)
+  fillMultiLineTile(ctx, 26, 62, 238, 238, 32, lineColors);
 
-  // Crisp full-contrast white official Lance Wyman pictogram inside tile
-  drawOfficialStationGlyph(ctx, spec.glyphId, 98, 122, 114, '#ffffff', spec.memberGlyphs);
+  // Crisp full-contrast white official Lance Wyman pictogram inside tile with dark drop shadow
+  ctx.save();
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 3;
+  drawOfficialStationGlyph(ctx, spec.glyphId, 145, 178, 186, '#ffffff', spec.memberGlyphs);
+  ctx.restore();
 
-  // Corner Automata State Badge (e.g. A, B, C...) so it complements without obscuring the official logo
+  // Corner Automata State Badge (e.g. A, B, C...) in bottom-left of emblem tile
+  const badgeW = Math.max(66, code.length * 21 + 26);
   ctx.fillStyle = '#09090b';
   ctx.beginPath();
-  ctx.roundRect(14, 174, Math.max(44, code.length * 14 + 18), 32, 8);
+  ctx.roundRect(18, 266, badgeW, 48, 12);
   ctx.fill();
   ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 4;
   ctx.stroke();
 
   ctx.fillStyle = '#ffffff';
-  const badgeFont = code.length > 4 ? 14 : code.length > 2 ? 16 : 19;
-  ctx.font = `700 ${badgeFont}px "IBM Plex Mono", monospace`;
+  const badgeFont = code.length > 4 ? 22 : code.length > 2 ? 25 : 30;
+  ctx.font = `900 ${badgeFont}px "IBM Plex Mono", monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(code, 14 + Math.max(44, code.length * 14 + 18) / 2, 190);
+  ctx.fillText(code, 18 + badgeW / 2, 291);
 
   // Right side: Official Station Name
   const displayName = spec.officialName !== code ? spec.officialName : subtitle;
   ctx.fillStyle = '#ffffff';
-  ctx.font = displayName.length > 18 ? '700 25px "Outfit", sans-serif' : '700 32px "Outfit", sans-serif';
+  ctx.font = displayName.length > 16 ? '800 40px "Outfit", sans-serif' : '800 52px "Outfit", sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText(displayName.slice(0, 24), 192, 76);
+  ctx.fillText(displayName.slice(0, 22), 290, 108);
 
   // Official Line Number Squares ([1] [5] [9] [A])
-  let badgeX = 192;
+  let badgeX = 290;
   if (spec.lines.length > 0) {
     spec.lines.forEach((lineCode) => {
       const info = CDMX_LINES[lineCode];
       ctx.fillStyle = info.color;
       ctx.beginPath();
-      ctx.roundRect(badgeX, 106, 36, 36, 7);
+      ctx.roundRect(badgeX, 156, 56, 56, 11);
       ctx.fill();
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 3;
       ctx.stroke();
 
       ctx.fillStyle = info.textColor;
-      ctx.font = '700 20px "Outfit", sans-serif';
+      ctx.font = '800 32px "Outfit", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(info.code, badgeX + 18, 125);
-      badgeX += 44;
+      ctx.fillText(info.code, badgeX + 28, 185);
+      badgeX += 68;
     });
   } else {
     ctx.fillStyle = '#fda4af';
-    ctx.font = '700 18px "Plus Jakarta Sans", sans-serif';
+    ctx.font = '700 26px "Plus Jakarta Sans", sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText('SIN CORRESPONDENCIA', 192, 124);
+    ctx.fillText('POZO · VÍA MUERTA', 290, 184);
   }
 
   // Automata status subtitle
   ctx.textAlign = 'left';
   ctx.fillStyle =
-    variant === 'accept' ? '#6ee7b7' : variant === 'deadend' ? '#fda4af' : '#cbd5e1';
-  ctx.font = '600 18px "Plus Jakarta Sans", sans-serif';
+    variant === 'accept' ? '#6ee7b7' : variant === 'deadend' ? '#fda4af' : '#e2e8f0';
+  ctx.font = '700 26px "Plus Jakarta Sans", sans-serif';
   const statusText =
     variant === 'accept'
       ? 'SALIDA VÁLIDA · EF = 1'
@@ -521,12 +527,12 @@ export function createStationSignTexture(
       : variant === 'start'
       ? 'TERMINAL INICIO · TRANSBORDO'
       : 'CORRESPONDENCIA ACTIVA';
-  ctx.fillText(statusText, 192, 172);
+  ctx.fillText(statusText, 290, 256);
 
   // Bottom bar with official line colors mirror
   lineColors.forEach((col, i) => {
     ctx.fillStyle = col;
-    ctx.fillRect(i * bandW, 244, bandW + 1, 12);
+    ctx.fillRect(i * bandW, 362, bandW + 1, 22);
   });
 
   const tex = new THREE.CanvasTexture(canvas);

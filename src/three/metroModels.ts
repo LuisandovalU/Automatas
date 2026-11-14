@@ -529,9 +529,9 @@ export function buildMetroStation(opts: StationBuildOptions): {
   const signTex = createStationSignTexture(opts.id, opts.label, opts.variant, opts.maxAnisotropy);
   textures.push(signTex);
   const signFaceMat = trackMat(
-    new THREE.MeshStandardMaterial({ map: signTex, roughness: 0.35, metalness: 0.1 })
+    new THREE.MeshStandardMaterial({ map: signTex, roughness: 0.32, metalness: 0.08 })
   );
-  const signBoardGeo = trackGeo(new THREE.BoxGeometry(2.65, 1.28, 0.14));
+  const signBoardGeo = trackGeo(new THREE.BoxGeometry(3.25, 1.58, 0.16));
   const signBoard = new THREE.Mesh(signBoardGeo, [
     steelMat,
     steelMat,
@@ -540,7 +540,7 @@ export function buildMetroStation(opts: StationBuildOptions): {
     signFaceMat,
     signFaceMat,
   ]);
-  signBoard.position.set(0, 3.48, -0.36);
+  signBoard.position.set(0, 3.62, -0.36);
   signBoard.castShadow = true;
   group.add(signBoard);
 

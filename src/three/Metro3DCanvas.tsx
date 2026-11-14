@@ -525,6 +525,20 @@ export const Metro3DCanvas: React.FC<Metro3DCanvasProps> = ({
         roughness: 0.88,
         metalness: 0.08,
       });
+      const line1PinkRailMat = new THREE.MeshStandardMaterial({
+        color: 0xf04e98,
+        emissive: 0x9d174d,
+        emissiveIntensity: 0.18,
+        roughness: 0.3,
+        metalness: 0.45,
+      });
+      const line2BlueRailMat = new THREE.MeshStandardMaterial({
+        color: 0x005eb8,
+        emissive: 0x1e3a8a,
+        emissiveIntensity: 0.2,
+        roughness: 0.3,
+        metalness: 0.45,
+      });
       const trainRailMat = new THREE.MeshStandardMaterial({
         color: 0xf26522,
         roughness: 0.32,
@@ -536,33 +550,35 @@ export const Metro3DCanvas: React.FC<Metro3DCanvasProps> = ({
         metalness: 0.35,
       });
       const bridgeFloorMat = new THREE.MeshStandardMaterial({
-        color: 0x0284c7,
-        emissive: 0x0369a1,
-        emissiveIntensity: 0.35,
-        roughness: 0.25,
+        color: 0x10b981,
+        emissive: 0x059669,
+        emissiveIntensity: 0.45,
+        roughness: 0.22,
         metalness: 0.25,
       });
       const glassBridgeMat = new THREE.MeshStandardMaterial({
-        color: 0x7dd3fc,
-        emissive: 0x0ea5e9,
-        emissiveIntensity: 0.22,
+        color: 0x6ee7b7,
+        emissive: 0x10b981,
+        emissiveIntensity: 0.26,
         roughness: 0.12,
         metalness: 0.15,
         transparent: true,
-        opacity: 0.38,
+        opacity: 0.42,
       });
       const beadMat = new THREE.MeshStandardMaterial({
-        color: 0xe0f2fe,
-        emissive: 0x38bdf8,
-        emissiveIntensity: 1.8,
+        color: 0xd1fae5,
+        emissive: 0x34d399,
+        emissiveIntensity: 1.9,
         roughness: 0.1,
       });
-      const beadGeo = new THREE.SphereGeometry(0.14, 10, 10);
+      const beadGeo = new THREE.SphereGeometry(0.15, 10, 10);
       const sleeperGeo = new THREE.BoxGeometry(1.15, 0.08, 0.22);
 
       networkDisposers.push(() => {
         ballastMat.dispose();
         sleeperMat.dispose();
+        line1PinkRailMat.dispose();
+        line2BlueRailMat.dispose();
         trainRailMat.dispose();
         deadRailMat.dispose();
         bridgeFloorMat.dispose();
@@ -633,7 +649,7 @@ export const Metro3DCanvas: React.FC<Metro3DCanvasProps> = ({
           const walkLbl = buildMinimal3DLabel({
             symbol: edge.symbol,
             caption: edge.caption,
-            accentColor: '#0284c7',
+            accentColor: '#10b981',
             position: midWalkPt,
             scale: 0.78,
             maxAnisotropy: maxAniso,
@@ -682,11 +698,19 @@ export const Metro3DCanvas: React.FC<Metro3DCanvasProps> = ({
           bedMesh.position.y = -0.14;
           bedMesh.receiveShadow = true;
 
-          const guideGeo = new THREE.TubeGeometry(railCurve, 36, 0.14, 8, false);
-          const guideMesh = new THREE.Mesh(
-            guideGeo,
-            edge.kind === 'dead' ? deadRailMat : trainRailMat
-          );
+          const isFirstSym = edge.symbol === 'a' || edge.symbol === '0';
+          const isSecondSym = edge.symbol === 'b' || edge.symbol === '1';
+          const chosenRailMat =
+            edge.kind === 'dead'
+              ? deadRailMat
+              : isFirstSym
+              ? line1PinkRailMat
+              : isSecondSym
+              ? line2BlueRailMat
+              : trainRailMat;
+
+          const guideGeo = new THREE.TubeGeometry(railCurve, 36, 0.16, 8, false);
+          const guideMesh = new THREE.Mesh(guideGeo, chosenRailMat);
           guideMesh.castShadow = !isSoftwareGl;
           guideMesh.receiveShadow = true;
           networkGroup.add(bedMesh, guideMesh);
@@ -713,7 +737,14 @@ export const Metro3DCanvas: React.FC<Metro3DCanvasProps> = ({
           const railLbl = buildMinimal3DLabel({
             symbol: edge.symbol,
             caption: edge.caption,
-            accentColor: edge.kind === 'dead' ? '#e11d48' : '#f26522',
+            accentColor:
+              edge.kind === 'dead'
+                ? '#e11d48'
+                : isFirstSym
+                ? '#F04E98'
+                : isSecondSym
+                ? '#005EB8'
+                : '#f26522',
             position: new THREE.Vector3(midRailPt.x, 0.12, midRailPt.z + 0.52),
             scale: 0.78,
             withPost: true,
